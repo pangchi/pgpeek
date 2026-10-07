@@ -1,0 +1,10 @@
+flask>=3.0
+openai>=1.30
+python-dotenv>=1.0
+pypdf>=4.0        # optional: PDF uploads
+python-docx>=1.1  # optional: .docx uploads
+openpyxl>=3.1      # optional: .xlsx uploads
+Pillow>=10.0       # optional: converts .bmp to .png
+psycopg[binary]>=3.1  # optional: PostgreSQL queries
+paramiko>=3.4        # optional: PostgreSQL over SSH
+cryptography>=42      # required for saved connections (encrypts passwords)

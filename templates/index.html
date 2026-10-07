@@ -1,0 +1,942 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pgPeek</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<style>
+:root{
+  --bg:#f6f7f9; --panel:#ffffff; --side:#1c2733; --side-ink:#c9d3dd; --side-hi:#2a3846;
+  --ink:#1b2430; --muted:#66727f; --line:#dfe3e8; --accent:#2f6f8f; --accent-ink:#fff;
+  --user:#e8eff4; --danger:#b4443a;
+  --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#141a21; --panel:#1a222b; --side:#0f141a; --side-ink:#a9b6c3; --side-hi:#1e2833;
+  --ink:#e3e8ee; --muted:#8c99a6; --line:#2a3440; --accent:#5ba3c6; --accent-ink:#0f141a;
+  --user:#223040; --danger:#e07a70;
+}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font:15px/1.6 var(--font);color:var(--ink);background:var(--bg);display:flex;overflow:hidden}
+button,select,textarea,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* sidebar */
+aside{width:260px;flex:none;background:var(--side);color:var(--side-ink);display:flex;flex-direction:column;padding:12px;gap:8px;transition:margin .2s}
+aside.hidden{margin-left:-260px}
+.newchat{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--side-hi);border-radius:8px;background:none;cursor:pointer;color:#fff}
+.newchat:hover{background:var(--side-hi)}
+#chatList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.item{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px}
+.item:hover,.item.active{background:var(--side-hi);color:#fff}
+.item span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item button{opacity:0;background:none;border:0;cursor:pointer;color:inherit;padding:2px 4px}
+.item:hover button,.item.active button{opacity:.7}
+.item button:hover{opacity:1}
+.sidefoot{border-top:1px solid var(--side-hi);padding-top:8px;font-size:13px}
+.sidefoot button{width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;color:var(--side-ink)}
+.sidefoot button:hover{background:var(--side-hi);color:#fff}
+
+/* main */
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+header{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.iconbtn{background:none;border:0;cursor:pointer;padding:6px;border-radius:6px;color:var(--muted);display:grid;place-items:center}
+.iconbtn:hover{background:var(--bg);color:var(--ink)}
+select{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px;max-width:260px}
+#title{flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);font-size:14px}
+
+#scroll{flex:1;overflow-y:auto}
+#messages{max-width:780px;margin:0 auto;padding:24px 20px 40px}
+.empty{height:100%;display:grid;place-items:center;text-align:center;color:var(--muted)}
+.empty h1{font-weight:500;color:var(--ink);font-size:26px;margin:0 0 6px}
+.msg{margin:0 0 22px;display:flex;flex-direction:column}
+.msg.user{align-items:flex-end}
+.msg.user .bubble{background:var(--user);padding:10px 14px;border-radius:16px 16px 4px 16px;max-width:85%;white-space:pre-wrap;word-wrap:break-word}
+.msg.assistant .bubble{max-width:100%;word-wrap:break-word}
+.bubble>:first-child{margin-top:0}.bubble>:last-child{margin-bottom:0}
+.bubble pre{position:relative;background:#0d1117;color:#e6edf3;border-radius:8px;padding:14px;overflow-x:auto;font:13px/1.5 var(--mono)}
+.bubble code{font-family:var(--mono);font-size:.9em}
+.bubble :not(pre)>code{background:var(--user);padding:1px 5px;border-radius:4px}
+.bubble table{border-collapse:collapse;display:block;overflow-x:auto}
+.bubble th,.bubble td{border:1px solid var(--line);padding:6px 10px}
+.bubble blockquote{border-left:3px solid var(--line);margin-left:0;padding-left:12px;color:var(--muted)}
+.copycode{position:absolute;top:6px;right:6px;font-size:12px;background:#2b333d;color:#cdd5de;border:0;border-radius:4px;padding:3px 8px;cursor:pointer}
+.tools{display:flex;gap:2px;margin-top:4px;opacity:.6}
+.msg:hover .tools{opacity:1}
+.tools button{background:none;border:0;cursor:pointer;color:var(--muted);font-size:12px;padding:3px 7px;border-radius:4px}
+.tools button:hover{background:var(--line);color:var(--ink)}
+.error{color:var(--danger)}
+.status{font-size:13px;color:var(--muted);margin-bottom:4px}
+.status:empty{display:none}
+.partsnote{font-size:12px;color:var(--muted);padding:3px 7px}
+.cursor::after{content:"▍";animation:blink 1s steps(2) infinite;color:var(--accent)}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.cursor::after{animation:none}aside{transition:none}}
+
+/* composer */
+.composer{padding:12px 20px 18px;background:linear-gradient(transparent,var(--bg) 30%)}
+.box{max-width:780px;margin:0 auto;display:flex;align-items:flex-end;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 8px 8px 14px}
+.box:focus-within{border-color:var(--accent)}
+textarea{flex:1;border:0;outline:0;resize:none;background:none;max-height:220px;padding:6px 0;line-height:1.5}
+#send{flex:none;width:36px;height:36px;border-radius:9px;border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer;display:grid;place-items:center}
+#send:disabled{opacity:.35;cursor:default}
+.hint{max-width:780px;margin:6px auto 0;font-size:12px;color:var(--muted);text-align:center}
+
+/* attachments */
+#attachBtn{flex:none;align-self:flex-end;margin-bottom:2px}
+#pending{max-width:780px;margin:0 auto 8px;display:flex;flex-wrap:wrap;gap:6px}
+#pending:empty{display:none}
+.chip{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:5px 6px 5px 5px;font-size:13px;max-width:240px}
+.chip img,.chip .ficon{width:34px;height:34px;border-radius:6px;object-fit:cover;flex:none}
+.chip .ficon{display:grid;place-items:center;background:var(--user);color:var(--accent);font:600 10px var(--mono)}
+.chip .meta{min-width:0;line-height:1.3}
+.chip .meta b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip .meta small{color:var(--muted)}
+.chip.err{border-color:var(--danger)}.chip.err small{color:var(--danger)}
+.chip button{background:none;border:0;cursor:pointer;color:var(--muted);padding:2px 4px}
+.chip button:hover{color:var(--ink)}
+.msgatts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;margin-bottom:6px;max-width:85%}
+.msgatts a{color:inherit;text-decoration:none}
+.msgatts img{max-width:220px;max-height:180px;border-radius:10px;border:1px solid var(--line);display:block}
+#drop{position:fixed;inset:0;z-index:20;display:none;place-items:center;background:color-mix(in srgb,var(--accent) 18%,transparent);border:3px dashed var(--accent);font-size:20px;font-weight:500;color:var(--ink);pointer-events:none}
+#drop.on{display:grid}
+
+/* database */
+.dbwrap{position:relative}
+.caret{font-size:10px;opacity:.6}
+#dbMenu{position:absolute;top:calc(100% + 6px);left:0;z-index:15;min-width:260px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px}
+#dbMenu label{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:14px;margin:0;color:var(--ink)}
+#dbMenu label:hover{background:var(--bg)}
+#dbMenu small{color:var(--muted);margin-left:auto;font-size:12px}
+#dbMenu .sep{border-top:1px solid var(--line);margin:6px 0}
+#dbMenu button{width:100%;text-align:left;background:none;border:0;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:14px;color:var(--accent)}
+#dbMenu button:hover{background:var(--bg)}
+#dbMenu .empty{padding:8px;color:var(--muted);font-size:13px}
+.sdot{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.sdot.ok{background:#3a9a5b}.sdot.bad{background:var(--danger)}
+#dbDialog{width:min(900px,95vw)}
+.dbgrid{display:grid;grid-template-columns:220px 1fr;gap:16px;height:min(640px,calc(92vh - 140px))}
+.dbform{overflow-y:auto;padding:0 6px 4px 2px}
+.dbside{overflow-y:auto}
+.dbside{display:flex;flex-direction:column;gap:6px;border-right:1px solid var(--line);padding-right:12px}
+#connList{display:flex;flex-direction:column;gap:2px}
+.conn{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:14px}
+.conn:hover{background:var(--bg)}.conn.active{background:var(--user)}
+.conn span:not(.sdot){flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conn small{color:var(--muted);font-size:11px}
+#cContext{min-height:80px}
+.btn.danger{color:var(--danger)}
+@media (max-width:700px){.dbgrid{grid-template-columns:1fr;height:auto}.dbform{overflow:visible}.dbside{border-right:0;border-bottom:1px solid var(--line);padding:0 0 10px}}
+#dbToggle{display:none;align-items:center;gap:6px;border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:4px 10px;cursor:pointer;font-size:13px;color:var(--muted)}
+#dbToggle{display:flex}
+#dbToggle .dot{width:8px;height:8px;border-radius:50%;background:var(--line)}
+#dbToggle.on{border-color:var(--accent);color:var(--ink)}
+#dbToggle.on .dot{background:var(--accent)}
+#dbToggle.bad .dot{background:var(--danger)}
+.runsql{position:absolute;top:6px;right:62px;font-size:12px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:500}
+.runsql:disabled{opacity:.5;cursor:default}
+.msg.sql{align-items:stretch}
+.sqlcard{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;font-size:13px}
+.sqlcard+.sqlcard{margin-top:8px}
+.sqlhead{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);background:var(--bg)}
+.sqlhead b{font-weight:600}.sqlhead small{color:var(--muted);margin-left:auto}
+.sqlcard details{padding:0 12px;border-bottom:1px solid var(--line)}
+.sqlcard summary{cursor:pointer;color:var(--muted);padding:6px 0}
+.sqlcard details pre{margin:0 0 8px;background:#0d1117;color:#e6edf3;border-radius:6px;padding:10px;overflow-x:auto;font:12px/1.5 var(--mono)}
+.tablewrap{overflow:auto;max-height:340px}
+.tablewrap table{border-collapse:collapse;width:100%;font:12px/1.4 var(--mono)}
+.tablewrap th{position:sticky;top:0;background:var(--panel);text-align:left;font-weight:600;border-bottom:1px solid var(--line)}
+.tablewrap th,.tablewrap td{padding:5px 10px;white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid var(--line)}
+.tablewrap td.null{color:var(--muted);font-style:italic}
+.sqlerr{padding:10px 12px;color:var(--danger);white-space:pre-wrap;font:12px/1.5 var(--mono)}
+.sqlnote{padding:6px 12px;color:var(--muted)}
+.check{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:14px;color:var(--ink)}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:0 10px}
+dialog input[type=text],dialog input[type=password],dialog select.full{width:100%;border:1px solid var(--line);border-radius:6px;padding:7px 8px;background:var(--bg);max-width:none}
+#dbDialog{max-height:92vh;overflow:auto}
+#sshFields{border:1px solid var(--line);border-radius:8px;padding:2px 12px 12px;margin-top:8px}
+#sshFields[hidden]{display:none}
+#sshFields textarea{min-height:90px;font:12px/1.4 var(--mono)}
+.fieldnote{font-size:12px;color:var(--muted);margin-top:6px}
+#dbState{margin-top:12px;font-size:13px;padding:8px 10px;border-radius:6px;background:var(--bg)}
+#dbState.ok{color:var(--ink)}#dbState.err{color:var(--danger)}
+#dbSchema{max-height:200px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.4 var(--mono);white-space:pre;margin:4px 0 0}
+.row .left{margin-right:auto}
+
+/* settings dialog */
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:20px;width:min(520px,92vw)}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog h2{margin:0 0 14px;font-size:18px;font-weight:600}
+dialog label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
+dialog textarea,dialog input[type=number]{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--bg)}
+dialog textarea{min-height:110px;resize:vertical}
+.row{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.btn{border:1px solid var(--line);background:none;border-radius:6px;padding:7px 14px;cursor:pointer}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+
+@media (max-width:760px){
+  aside{position:fixed;z-index:10;inset:0 auto 0 0;box-shadow:4px 0 20px rgba(0,0,0,.3)}
+  #messages{padding:16px 14px 30px}.composer{padding:8px 10px 12px}
+}
+</style>
+</head>
+<body>
+<aside id="sidebar">
+  <button class="newchat" id="newChat">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+    New chat
+  </button>
+  <div id="chatList"></div>
+  <div class="sidefoot">
+    <button id="openSettings">Settings</button>
+    <button id="openDb">Database</button>
+    <button id="clearAll">Delete all chats</button>
+  </div>
+</aside>
+
+<main>
+  <header>
+    <button class="iconbtn" id="toggleSide" aria-label="Toggle sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg>
+    </button>
+    <select id="model" aria-label="Model"></select>
+    <div class="dbwrap">
+      <button id="dbToggle" aria-haspopup="true" title="Choose which databases the model can query in this chat"><span class="dot"></span><span id="dbLabel">Database off</span><span class="caret">▾</span></button>
+      <div id="dbMenu" hidden></div>
+    </div>
+    <div id="title"></div>
+  </header>
+  <div id="scroll"><div id="messages"></div></div>
+  <div class="composer">
+    <div id="pending"></div>
+    <div class="box">
+      <button class="iconbtn" id="attachBtn" aria-label="Attach files" title="Attach files">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 01-7.8-7.8l8.6-8.6a3.7 3.7 0 015.2 5.2l-8.6 8.6a1.8 1.8 0 01-2.6-2.6l7.9-7.9"/></svg>
+      </button>
+      <input type="file" id="fileInput" multiple hidden>
+      <textarea id="input" rows="1" placeholder="Message" aria-label="Message"></textarea>
+      <button id="send" aria-label="Send" disabled>
+        <svg id="sendIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+    <div class="hint">Enter to send · Shift+Enter for a new line · Drop, paste or attach files</div>
+  </div>
+</main>
+
+<dialog id="dbDialog">
+  <h2>Database connections</h2>
+  <div class="dbgrid">
+    <div class="dbside">
+      <div id="connList"></div>
+      <button class="btn" id="connNew">+ New connection</button>
+    </div>
+    <div class="dbform">
+      <div id="envNote" class="fieldnote" hidden>This connection comes from <b>DATABASE_URL</b> in .env. Edit it there; you can still view its schema.</div>
+      <label for="cName">Name <span class="fieldnote">(the model uses it in <code>-- db: name</code>)</span></label><input type="text" id="cName" placeholder="e.g. production, workshop">
+      <div class="grid2">
+        <div><label for="dbHost">Host</label><input type="text" id="dbHost" placeholder="localhost"></div>
+        <div><label for="dbPort">Port</label><input type="text" id="dbPort" placeholder="5432"></div>
+      </div>
+      <label for="dbName">Database</label><input type="text" id="dbName">
+      <div class="grid2">
+        <div><label for="dbUser">User</label><input type="text" id="dbUser" autocomplete="off"></div>
+        <div><label for="dbSsl">SSL</label>
+          <select id="dbSsl" class="full"><option value="">default</option><option>disable</option><option>prefer</option><option>require</option><option>verify-full</option></select></div>
+      </div>
+      <label for="dbPass">Password</label><input type="password" id="dbPass" autocomplete="new-password">
+      <label for="cSchemas">Schemas the model can see</label><input type="text" id="cSchemas" placeholder="public  (comma-separated)">
+      <label for="cContext">Notes for the model</label>
+      <textarea id="cContext" placeholder="What the data means: status codes, units, time zone, how metrics are calculated…"></textarea>
+      <label class="check"><input type="checkbox" id="sshOn"> Connect through SSH</label>
+      <div id="sshFields" hidden>
+        <div class="fieldnote">The database host and port above are as seen from the SSH server, usually <b>localhost</b> and <b>5432</b>.</div>
+        <div class="grid2">
+          <div><label for="sshHost">SSH host</label><input type="text" id="sshHost" placeholder="bastion.example.com"></div>
+          <div><label for="sshPort">SSH port</label><input type="text" id="sshPort" placeholder="22"></div>
+        </div>
+        <div class="grid2" style="grid-template-columns:1fr 1fr">
+          <div><label for="sshUser">SSH user</label><input type="text" id="sshUser" autocomplete="off"></div>
+          <div><label for="sshAuth">Sign in with</label>
+            <select id="sshAuth" class="full">
+              <option value="password">Password</option>
+              <option value="key_path">Key file on server</option>
+              <option value="key_text">Paste private key</option>
+              <option value="agent">ssh-agent / default keys</option>
+            </select></div>
+        </div>
+        <div data-auth="password"><label for="sshPass">SSH password</label><input type="password" id="sshPass" autocomplete="new-password"></div>
+        <div data-auth="key_path"><label for="sshKeyPath">Private key path (on the machine running the app)</label><input type="text" id="sshKeyPath" placeholder="~/.ssh/id_ed25519"></div>
+        <div data-auth="key_text"><label for="sshKeyText">Private key</label><textarea id="sshKeyText" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea></div>
+        <div data-auth="key_path key_text"><label for="sshPassphrase">Key passphrase (if any)</label><input type="password" id="sshPassphrase" autocomplete="new-password"></div>
+      </div>
+      <div id="dbState"></div>
+      <label>Schema the model sees <button class="btn" id="dbRefresh" style="padding:1px 8px;font-size:12px;margin-left:6px">Refresh</button></label>
+      <pre id="dbSchema">—</pre>
+    </div>
+  </div>
+  <div class="row">
+    <button class="btn left danger" id="connDelete">Delete</button>
+    <button class="btn" id="dbClose">Close</button>
+    <button class="btn" id="connForce" hidden>Save anyway</button>
+    <button class="btn primary" id="connSave">Test &amp; save</button>
+  </div>
+</dialog>
+<div id="drop">Drop files to attach</div>
+<dialog id="settings">
+  <h2>Settings</h2>
+  <label for="sysPrompt">System prompt</label>
+  <textarea id="sysPrompt"></textarea>
+  <label for="temp">Temperature (0–2)</label>
+  <input type="number" id="temp" min="0" max="2" step="0.1">
+  <label class="check"><input type="checkbox" id="autoRun"> Run the model's SQL queries automatically</label>
+  <div style="font-size:12px;color:var(--muted);margin-top:4px">Queries are always read-only. Auto-run stops after 5 queries in a row so you can check in.</div>
+  <div class="row">
+    <button class="btn" id="cancelSettings">Cancel</button>
+    <button class="btn primary" id="saveSettings">Save</button>
+  </div>
+</dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const STORE = "pgpeek.v1";
+const OLD_STORES = ["dbhelper.v1", "flaskchat.v1"];   // earlier names (DB Helper, flask-chat); migrated once on first load
+try { if (!localStorage.getItem(STORE)) {
+  const old = OLD_STORES.find(k => localStorage.getItem(k));
+  if (old) localStorage.setItem(STORE, localStorage.getItem(old));
+} OLD_STORES.forEach(k => localStorage.removeItem(k)); } catch {}
+const ICON_SEND = '<path d="M12 19V5M5 12l7-7 7 7"/>';
+const ICON_STOP = '<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/>';
+
+let state = load() || { chats: [], current: null, settings: null, model: null };
+let controller = null;
+let pending = [];   // {key, file, status:'uploading'|'ready'|'error', meta, error, preview}
+let maxMB = 20;
+let conns = [], connStatus = {}, dbInfo = { available: true, ssh_available: true };
+let editing = null;   // id of the connection open in the manager, or null for a new one
+const SQL_LANGS = ["sql","pgsql","postgres","postgresql","plpgsql"];
+const AUTO_RUN_LIMIT = 5;
+let allowedExts = null, specialNames = [];
+
+function load(){ try { return JSON.parse(localStorage.getItem(STORE)); } catch { return null; } }
+function save(){ try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} }
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const cur = () => state.chats.find(c => c.id === state.current);
+
+/* ---------- markdown ---------- */
+function md(text){
+  if (!window.marked) return fallbackMd(text);
+  const html = marked.parse(text, { breaks: true, gfm: true });
+  return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+}
+function fallbackMd(text){   // used when the markdown library can't load (offline): keeps code blocks working
+  const e = t => t.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return text.split(/(```[\w+-]*[ \t]*\n[\s\S]*?```)/g).map(seg => {
+    const m = seg.match(/^```([\w+-]*)[ \t]*\n([\s\S]*?)```$/);
+    return m ? `<pre><code class="language-${e(m[1] || "text")}">${e(m[2].replace(/\n$/, ""))}</code></pre>` : e(seg).replace(/\n/g,"<br>");
+  }).join("");
+}
+function decorate(el){
+  el.querySelectorAll("pre code").forEach(c => { if (window.hljs) hljs.highlightElement(c); });
+  el.querySelectorAll("pre").forEach(pre => {
+    if (pre.querySelector(".copycode")) return;
+    const b = document.createElement("button");
+    b.className = "copycode"; b.textContent = "Copy";
+    b.onclick = () => { navigator.clipboard.writeText(pre.querySelector("code")?.innerText || pre.innerText); b.textContent = "Copied"; setTimeout(()=>b.textContent="Copy",1200); };
+    pre.appendChild(b);
+  });
+}
+
+/* ---------- attachments ---------- */
+const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? (n/1024).toFixed(0) + " KB" : (n/1048576).toFixed(1) + " MB";
+const extOf = n => (n.split(".").pop() || "file").slice(0,4).toUpperCase();
+function esc(t){ const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
+
+function addFiles(files){
+  for (const file of files) {
+    const item = { key: uid(), file, status: "uploading" };
+    const dot = file.name.lastIndexOf(".");
+    const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : "";
+    if (allowedExts && !allowedExts.includes(ext) && !specialNames.includes(file.name.toLowerCase())) {
+      item.status = "error"; item.error = `${ext || "No extension"} isn't an allowed type`;
+    } else if (file.size > maxMB * 1048576) { item.status = "error"; item.error = `Over ${maxMB} MB limit`; }
+    if (file.type.startsWith("image/")) item.preview = URL.createObjectURL(file);
+    pending.push(item);
+    if (item.status === "uploading") uploadOne(item);
+  }
+  renderPending();
+}
+async function uploadOne(item){
+  const fd = new FormData(); fd.append("file", item.file);
+  try {
+    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const j = await r.json().catch(() => ({ error: `Upload failed (${r.status})` }));
+    if (!r.ok || j.error) throw new Error(j.error || `Upload failed (${r.status})`);
+    item.meta = j; item.status = "ready";
+  } catch (e) { item.status = "error"; item.error = e.message; }
+  renderPending();
+}
+function renderPending(){
+  const box = $("#pending"); box.innerHTML = "";
+  pending.forEach(p => {
+    const c = document.createElement("div");
+    c.className = "chip" + (p.status === "error" ? " err" : "");
+    const status = p.status === "uploading" ? "Uploading…" : p.status === "error" ? p.error
+      : fmtSize(p.meta.size) + (p.meta.stats ? ` · ${p.meta.stats.files} files` + (p.meta.stats.skipped ? `, ${p.meta.stats.skipped} skipped` : "") : "")
+        + (p.meta.stats?.trimmed ? ` · ${p.meta.stats.trimmed} trimmed` : p.meta.truncated ? " · truncated" : "");
+    c.innerHTML = (p.preview ? `<img src="${p.preview}" alt="">` : `<div class="ficon">${esc(extOf(p.file.name))}</div>`)
+      + `<div class="meta"><b>${esc(p.file.name)}</b><small>${esc(status)}</small></div><button title="Remove" aria-label="Remove">✕</button>`;
+    c.querySelector("button").onclick = () => { pending = pending.filter(x => x !== p); if (p.preview) URL.revokeObjectURL(p.preview); renderPending(); };
+    box.appendChild(c);
+  });
+  updateSend();
+}
+function attachmentsEl(atts){
+  const w = document.createElement("div"); w.className = "msgatts";
+  atts.forEach(a => {
+    const link = document.createElement("a"); link.href = "/files/" + a.id; link.target = "_blank"; link.title = a.name;
+    if (a.kind === "image") {
+      const img = new Image(); img.src = "/files/" + a.id; img.alt = a.name;
+      img.onerror = () => img.replaceWith(document.createTextNode(a.name + " (unavailable)"));
+      link.appendChild(img);
+    }
+    else link.innerHTML = `<div class="chip"><div class="ficon">${esc(extOf(a.name))}</div><div class="meta"><b>${esc(a.name)}</b><small>${fmtSize(a.size)}${a.stats ? " · " + a.stats.files + " files" : ""}</small></div></div>`;
+    w.appendChild(link);
+  });
+  return w;
+}
+
+/* ---------- rendering ---------- */
+function renderList(){
+  const list = $("#chatList"); list.innerHTML = "";
+  state.chats.forEach(c => {
+    const d = document.createElement("div");
+    d.className = "item" + (c.id === state.current ? " active" : "");
+    d.innerHTML = `<span></span><button title="Rename">✎</button><button title="Delete">✕</button>`;
+    d.querySelector("span").textContent = c.title || "New chat";
+    d.onclick = () => { if (controller) return; state.current = c.id; save(); render(); };
+    const [ren, del] = d.querySelectorAll("button");
+    ren.onclick = e => { e.stopPropagation(); const t = prompt("Rename chat", c.title); if (t) { c.title = t.trim(); save(); render(); } };
+    del.onclick = e => { e.stopPropagation(); if (!confirm("Delete this chat?")) return;
+      state.chats = state.chats.filter(x => x.id !== c.id);
+      if (state.current === c.id) state.current = state.chats[0]?.id || null;
+      save(); render(); };
+    list.appendChild(d);
+  });
+}
+
+function sqlCard(r){
+  const card = document.createElement("div"); card.className = "sqlcard";
+  const meta = r.error ? "Failed" : `${r.row_count}${r.truncated ? "+" : ""} row${r.row_count === 1 && !r.truncated ? "" : "s"} · ${r.ms} ms`;
+  card.innerHTML = `<div class="sqlhead"><b>Query result</b>${r.db_name ? `<span style="color:var(--muted)">· ${esc(r.db_name)}</span>` : ""}<small>${esc(meta)}</small></div><details><summary>SQL</summary><pre><code></code></pre></details>`;
+  card.querySelector("code").textContent = r.sql;
+  if (r.error) {
+    const e = document.createElement("div"); e.className = "sqlerr"; e.textContent = r.error; card.appendChild(e);
+  } else if (r.columns?.length) {
+    const tw = document.createElement("div"); tw.className = "tablewrap";
+    const t = document.createElement("table");
+    const hr = t.createTHead().insertRow();
+    r.columns.forEach(c => { const th = document.createElement("th"); th.textContent = c; hr.appendChild(th); });
+    const tb = t.createTBody();
+    (r.rows || []).forEach(row => { const tr = tb.insertRow(); row.forEach(v => { const td = tr.insertCell();
+      if (v === null) { td.textContent = "NULL"; td.className = "null"; } else { td.textContent = String(v); td.title = String(v); } }); });
+    tw.appendChild(t); card.appendChild(tw);
+    if (r.rows_stored < r.row_count) { const n = document.createElement("div"); n.className = "sqlnote";
+      n.textContent = `Showing ${r.rows_stored} of ${r.row_count} rows here; the model received more.`; card.appendChild(n); }
+    if (!r.row_count) { const n = document.createElement("div"); n.className = "sqlnote"; n.textContent = "No rows."; card.appendChild(n); }
+  } else { const n = document.createElement("div"); n.className = "sqlnote"; n.textContent = "No columns returned."; card.appendChild(n); }
+  return card;
+}
+function toCSV(r){
+  const q = v => v === null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g,'""')}"` : String(v);
+  return [r.columns, ...(r.rows || [])].map(row => row.map(q).join(",")).join("\n");
+}
+function sqlBlocks(el){
+  return [...el.querySelectorAll("pre code")].filter(c =>
+    SQL_LANGS.some(l => c.classList.contains("language-" + l)));
+}
+function addRunButtons(bubble){
+  if (!chatDbs().length) return;
+  sqlBlocks(bubble).forEach(code => {
+    const pre = code.closest("pre"); if (pre.querySelector(".runsql")) return;
+    const b = document.createElement("button"); b.className = "runsql"; b.textContent = "Run";
+    b.onclick = () => { if (controller) return; b.disabled = true; b.textContent = "Running…"; runAndSend([code.innerText.trim()]); };
+    pre.appendChild(b);
+  });
+}
+
+function msgEl(m, i){
+  const wrap = document.createElement("div");
+  wrap.className = "msg " + m.role;
+  if (m.kind === "sql") {
+    wrap.className = "msg sql";
+    m.results.forEach(r => wrap.appendChild(sqlCard(r)));
+    const tools = document.createElement("div"); tools.className = "tools";
+    const cp = document.createElement("button"); cp.textContent = "Copy CSV";
+    cp.onclick = () => { navigator.clipboard.writeText(m.results.filter(r => !r.error).map(toCSV).join("\n\n")); cp.textContent = "Copied"; setTimeout(()=>cp.textContent="Copy CSV",1200); };
+    tools.appendChild(cp);
+    const rr = document.createElement("button"); rr.textContent = "Run again";
+    rr.onclick = () => { if (controller) return; cur().messages = cur().messages.slice(0, i); runAndSend(m.results.map(r => r.sql)); };
+    tools.appendChild(rr);
+    wrap.appendChild(tools);
+    return wrap;
+  }
+  if (m.attachments?.length) wrap.appendChild(attachmentsEl(m.attachments));
+  const b = document.createElement("div");
+  b.className = "bubble" + (m.error ? " error" : "");
+  if (m.role === "user") b.textContent = m.content; else { b.innerHTML = md(m.content); decorate(b); addRunButtons(b); }
+  if (m.role !== "user" || m.content) wrap.appendChild(b);
+  const tools = document.createElement("div"); tools.className = "tools";
+  const copy = document.createElement("button"); copy.textContent = "Copy";
+  copy.onclick = () => { navigator.clipboard.writeText(m.content); copy.textContent = "Copied"; setTimeout(()=>copy.textContent="Copy",1200); };
+  tools.appendChild(copy);
+  if (m.parts > 1) { const pn = document.createElement("span"); pn.className = "partsnote";
+    pn.textContent = `Read in ${m.parts} parts`; pn.title = "Too large for one request, so the files were read in parts and combined";
+    tools.appendChild(pn); }
+  if (m.role === "user") {
+    const ed = document.createElement("button"); ed.textContent = "Edit";
+    ed.onclick = () => editMessage(i); tools.appendChild(ed);
+  } else if (i === cur().messages.length - 1) {
+    const rg = document.createElement("button"); rg.textContent = "Regenerate";
+    rg.onclick = regenerate; tools.appendChild(rg);
+  }
+  wrap.appendChild(tools);
+  return wrap;
+}
+
+function render(){
+  renderList();
+  updateDbToggle();
+  const box = $("#messages"); box.innerHTML = "";
+  const c = cur();
+  $("#title").textContent = c?.title || "";
+  if (!c || !c.messages.length) {
+    box.style.height = "100%";
+    box.innerHTML = `<div class="empty"><div><h1>pgPeek</h1><div>Ask about your data, or attach files to get started.</div></div></div>`;
+    return;
+  }
+  box.style.height = "";
+  c.messages.forEach((m, i) => box.appendChild(msgEl(m, i)));
+  scrollDown(true);
+}
+function scrollDown(force){
+  const s = $("#scroll");
+  if (force || s.scrollHeight - s.scrollTop - s.clientHeight < 120) s.scrollTop = s.scrollHeight;
+}
+
+/* ---------- chat flow ---------- */
+function newChat(){
+  if (controller) return;
+  const c = { id: uid(), title: "", messages: [], dbs: (state.dbDefaults || []).filter(id => conns.some(x => x.id === id)) };
+  state.chats.unshift(c); state.current = c.id; save(); render(); $("#input").focus();
+}
+
+async function send(text, atts){
+  let c = cur();
+  if (!c) { newChat(); c = cur(); }
+  if (text !== null) {
+    const m = { role: "user", content: text };
+    if (atts?.length) m.attachments = atts;
+    c.messages.push(m);
+    if (!c.title) c.title = (text || atts.map(a => a.name).join(", ")).slice(0, 48).replace(/\s+/g, " ");
+    // move chat to top
+    state.chats = [c, ...state.chats.filter(x => x.id !== c.id)];
+  }
+  const reply = { role: "assistant", content: "" };
+  c.messages.push(reply); save(); render();
+
+  const bubbles = document.querySelectorAll("#messages .msg.assistant .bubble");
+  const bubble = bubbles[bubbles.length - 1];
+  bubble.classList.add("cursor");
+  const statusEl = document.createElement("div"); statusEl.className = "status";
+  bubble.parentNode.insertBefore(statusEl, bubble);
+  setBusy(true);
+
+  controller = new AbortController();
+  let aborted = false;
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({
+        model: $("#model").value,
+        temperature: state.settings.temperature,
+        dbs: chatDbs(c),
+        system: state.settings.system,
+        messages: c.messages.slice(0, -1).filter(m => !m.error).map(({role, content, attachments}) => ({role, content, attachments}))
+      })
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let buf = "", pending = false;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.delta) { reply.content += ev.delta; statusEl.textContent = ""; }
+        if (ev.status) statusEl.textContent = ev.status;
+        if (ev.parts) reply.parts = ev.parts;
+        if (ev.error) { reply.content += (reply.content ? "\n\n" : "") + "**Request failed.** " + ev.error; reply.error = true; }
+      }
+      if (!pending) { pending = true; requestAnimationFrame(() => { bubble.innerHTML = md(reply.content); scrollDown(); pending = false; }); }
+    }
+  } catch (e) {
+    if (e.name === "AbortError") aborted = true;
+    if (e.name !== "AbortError") { reply.content += (reply.content ? "\n\n" : "") + "**Request failed.** " + e.message; reply.error = true; }
+  } finally {
+    controller = null;
+    if (!reply.content) { reply.content = "_Stopped before any response._"; }
+    save(); setBusy(false); render();
+    if (!aborted && !reply.error) maybeAutoRun(c, reply);
+  }
+}
+
+/* ---------- SQL runs ---------- */
+function extractSQL(content){
+  const tmp = document.createElement("div"); tmp.innerHTML = md(content);
+  return sqlBlocks(tmp).map(c => c.textContent.trim()).filter(Boolean);
+}
+function maybeAutoRun(c, reply){
+  if (!state.settings.autoRun || !chatDbs(c).length || c.id !== state.current) return;
+  const sqls = extractSQL(reply.content); if (!sqls.length) return;
+  let streak = 0;   // query rounds since the user last typed something
+  for (let k = c.messages.length - 1; k >= 0; k--) {
+    const m = c.messages[k];
+    if (m.kind === "sql") streak++; else if (m.role === "user") break;
+  }
+  if (streak >= AUTO_RUN_LIMIT) return;
+  runAndSend(sqls);
+}
+async function runAndSend(sqls){
+  const c = cur(); if (!c || controller) return;
+  setBusy(true);
+  const results = [];
+  for (const sql of sqls) {
+    try {
+      const r = await fetch("/api/db/query", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sql, dbs: chatDbs(c) }) }).then(r => r.json());
+      results.push(r);
+    } catch (e) { results.push({ sql, error: "Couldn't reach the server: " + e.message, text: "```sql\n" + sql + "\n```\nError: " + e.message }); }
+  }
+  setBusy(false);
+  const content = "Query results from the app (not typed by the user):\n\n" +
+    results.map((r, k) => (results.length > 1 ? `Query ${k + 1}:\n` : "") + r.text).join("\n\n") +
+    "\n\nContinue: answer from these results, or fix and rerun the query if it failed.";
+  const stored = results.map(r => ({ sql: r.sql, error: r.error, db_name: r.db_name, columns: r.columns, row_count: r.row_count,
+    truncated: r.truncated, ms: r.ms, rows: (r.rows || []).slice(0, 100), rows_stored: Math.min(100, r.rows?.length || 0) }));
+  c.messages.push({ role: "user", kind: "sql", content, results: stored });
+  send(null);
+}
+
+/* ---------- database ---------- */
+const api = (url, opts = {}) => fetch(url, { headers: { "Content-Type": "application/json" }, ...opts })
+  .then(async r => { const j = await r.json().catch(() => ({ error: `Server returned ${r.status}` })); if (!r.ok && !j.error) j.error = `Server returned ${r.status}`; return j; })
+  .catch(e => ({ error: "Couldn't reach the server: " + e.message }));
+function chatDbs(c = cur()){ return (c?.dbs || []).filter(id => conns.some(x => x.id === id)); }
+function connName(id){ return conns.find(x => x.id === id)?.name || id; }
+
+async function loadConnections(){
+  const r = await api("/api/db/connections");
+  if (r.error) { conns = []; return; }
+  conns = r.connections; dbInfo = { available: r.available, ssh_available: r.ssh_available };
+  // migrate chats from the single-database version
+  state.chats.forEach(c => { if (c.db === true && !c.dbs) c.dbs = conns.length ? [conns[0].id] : []; delete c.db; });
+  if (state.dbOn && !state.dbDefaults) state.dbDefaults = conns.length ? [conns[0].id] : [];
+  delete state.dbOn; save();
+}
+async function checkStatus(ids){
+  await Promise.all(ids.map(async id => {
+    const r = await api(`/api/db/connections/${id}/status`);
+    connStatus[id] = { ok: !!r.ok, error: r.error, info: r };
+  }));
+  updateDbToggle(); renderConnList();
+  if (!$("#dbMenu").hidden) renderDbMenu();
+}
+
+function updateDbToggle(){
+  const t = $("#dbToggle"), ids = chatDbs();
+  const bad = ids.some(id => connStatus[id] && !connStatus[id].ok);
+  t.classList.toggle("on", ids.length > 0 && !bad);
+  t.classList.toggle("bad", bad);
+  $("#dbLabel").textContent = !ids.length ? "Database off" : ids.length === 1 ? connName(ids[0]) : `${ids.length} databases`;
+  t.title = !ids.length ? "Choose which databases the model can query in this chat"
+    : ids.map(id => connName(id) + (connStatus[id] && !connStatus[id].ok ? " (unavailable: " + connStatus[id].error + ")" : "")).join(", ");
+}
+function renderDbMenu(){
+  const m = $("#dbMenu"), ids = chatDbs();
+  m.innerHTML = "";
+  if (!conns.length) m.innerHTML = `<div class="empty">No connections saved yet.</div>`;
+  conns.forEach(x => {
+    const l = document.createElement("label");
+    const st = connStatus[x.id];
+    l.innerHTML = `<input type="checkbox"><span class="sdot ${st ? (st.ok ? "ok" : "bad") : ""}"></span><span></span><small></small>`;
+    l.querySelector("span:nth-of-type(2)").textContent = x.name;
+    l.querySelector("small").textContent = x.ssh ? "via SSH" : x.source === "env" ? ".env" : "";
+    const cb = l.querySelector("input"); cb.checked = ids.includes(x.id);
+    cb.onchange = () => {
+      let c = cur(); if (!c) { newChat(); c = cur(); }
+      c.dbs = cb.checked ? [...new Set([...chatDbs(c), x.id])] : chatDbs(c).filter(i => i !== x.id);
+      state.dbDefaults = [...c.dbs]; save(); render(); renderDbMenu();
+      if (cb.checked && !connStatus[x.id]) checkStatus([x.id]);
+    };
+    m.appendChild(l);
+  });
+  const sep = document.createElement("div"); sep.className = "sep"; m.appendChild(sep);
+  const b = document.createElement("button"); b.textContent = "Manage connections…";
+  b.onclick = () => { m.hidden = true; openDb(); }; m.appendChild(b);
+}
+$("#dbToggle").onclick = e => {
+  e.stopPropagation();
+  const m = $("#dbMenu");
+  if (!conns.length) { openDb(); return; }
+  m.hidden = !m.hidden;
+  if (!m.hidden) { renderDbMenu(); checkStatus(conns.filter(x => !connStatus[x.id]).map(x => x.id)); }
+};
+document.addEventListener("click", e => { if (!e.target.closest(".dbwrap")) $("#dbMenu").hidden = true; });
+
+/* ---------- connection manager ---------- */
+const dbDlg = $("#dbDialog");
+const SECRET_KEEP = "Saved – leave blank to keep";
+function renderConnList(){
+  const list = $("#connList"); if (!list) return;
+  list.innerHTML = "";
+  conns.forEach(x => {
+    const st = connStatus[x.id];
+    const d = document.createElement("div");
+    d.className = "conn" + (editing === x.id ? " active" : "");
+    d.innerHTML = `<span class="sdot ${st ? (st.ok ? "ok" : "bad") : ""}"></span><span></span><small></small>`;
+    d.querySelector("span:nth-of-type(2)").textContent = x.name;
+    d.querySelector("small").textContent = x.source === "env" ? ".env" : x.ssh ? "SSH" : "";
+    d.title = st ? (st.ok ? "Connected" : st.error) : "";
+    d.onclick = () => selectConn(x.id);
+    list.appendChild(d);
+  });
+  if (editing === null) {
+    const d = document.createElement("div"); d.className = "conn active";
+    d.innerHTML = `<span class="sdot"></span><span>New connection</span>`; list.appendChild(d);
+  }
+}
+function setState(cls, text){ const el = $("#dbState"); el.className = cls; el.textContent = text; }
+function describe(st){
+  if (!st) return "";
+  if (!st.ok) return "Can't connect: " + (st.error || "unknown error");
+  const i = st.info || st;
+  return `Connected to ${i.dbname} as ${i.user} on ${i.host}:${i.port}` +
+    (i.ssh ? ` via SSH ${i.ssh.user}@${i.ssh.host}${i.ssh.port != 22 ? ":" + i.ssh.port : ""}` : "") +
+    (i.server_version ? ` · PostgreSQL ${String(i.server_version).split(" ")[0]}` : "");
+}
+function fillForm(x){
+  const ro = x?.source === "env";
+  $("#envNote").hidden = !ro;
+  $("#cName").value = x?.name || ""; $("#dbHost").value = x?.host || ""; $("#dbPort").value = x?.port || "";
+  $("#dbName").value = x?.dbname || ""; $("#dbUser").value = x?.user || ""; $("#dbSsl").value = x?.sslmode || "";
+  $("#dbPass").value = ""; $("#dbPass").placeholder = x?.has_password ? SECRET_KEEP : "";
+  $("#cSchemas").value = x?.schemas || ""; $("#cContext").value = x?.context || "";
+  const ssh = x?.ssh;
+  $("#sshOn").checked = !!ssh; $("#sshHost").value = ssh?.host || ""; $("#sshPort").value = ssh?.port || "";
+  $("#sshUser").value = ssh?.user || ""; $("#sshKeyPath").value = ssh?.key_path || "";
+  $("#sshAuth").value = { "key file": "key_path", "pasted key": "key_text", "password": "password" }[ssh?.auth] || (ssh ? "agent" : "password");
+  ["#sshPass", "#sshKeyText", "#sshPassphrase"].forEach(sel => { $(sel).value = ""; $(sel).placeholder = ""; });
+  if (ssh) {
+    if (ssh.auth === "password") $("#sshPass").placeholder = SECRET_KEEP;
+    if (ssh.auth === "pasted key") $("#sshKeyText").placeholder = SECRET_KEEP;
+    if (ssh.auth === "key file" || ssh.auth === "pasted key") $("#sshPassphrase").placeholder = "Saved if set – leave blank to keep";
+  }
+  dbDlg.querySelectorAll(".dbform input, .dbform select, .dbform textarea").forEach(el => el.disabled = ro);
+  $("#connSave").hidden = ro; $("#connDelete").hidden = ro || !x; $("#connForce").hidden = true;
+  syncSsh();
+}
+async function selectConn(id){
+  editing = id; const x = conns.find(c => c.id === id);
+  fillForm(x); renderConnList();
+  $("#dbSchema").textContent = "—";
+  if (x?.error) { setState("err", x.error); return; }
+  setState("", "Checking…");
+  await checkStatus([id]);
+  if (editing !== id) return;
+  setState(connStatus[id].ok ? "ok" : "err", describe(connStatus[id]));
+  if (connStatus[id].ok) loadSchema(false);
+}
+function newConn(){
+  editing = null; fillForm(null); renderConnList();
+  setState("", dbInfo.available ? "Enter the connection details, then Test & save." :
+    "PostgreSQL support isn't installed on the server: pip install \"psycopg[binary]\"");
+  $("#dbSchema").textContent = "—"; $("#cName").focus();
+}
+async function loadSchema(refresh){
+  const el = $("#dbSchema"); if (editing === null) { el.textContent = "—"; return; }
+  el.textContent = "Loading…";
+  const r = await api(`/api/db/connections/${editing}/schema` + (refresh ? "?refresh=1" : ""));
+  el.textContent = r.error ? "Error: " + r.error : `${r.tables} table(s)\n\n${r.text}`;
+}
+async function openDb(){
+  dbDlg.showModal();
+  await loadConnections(); updateDbToggle();
+  const first = chatDbs()[0] || conns[0]?.id;
+  if (first) selectConn(first); else newConn();
+  checkStatus(conns.map(x => x.id));
+}
+function formBody(){
+  return { name: $("#cName").value, host: $("#dbHost").value, port: $("#dbPort").value, dbname: $("#dbName").value,
+    user: $("#dbUser").value, password: $("#dbPass").value, sslmode: $("#dbSsl").value,
+    schemas: $("#cSchemas").value, context: $("#cContext").value,
+    ssh_enabled: $("#sshOn").checked, ssh_host: $("#sshHost").value, ssh_port: $("#sshPort").value,
+    ssh_user: $("#sshUser").value, ssh_auth: $("#sshAuth").value, ssh_password: $("#sshPass").value,
+    ssh_key_path: $("#sshKeyPath").value, ssh_key_text: $("#sshKeyText").value, ssh_passphrase: $("#sshPassphrase").value };
+}
+async function saveConn(force){
+  const body = formBody(); body.force = force;
+  if (!dbInfo.available) { setState("err", "PostgreSQL support isn't installed on the server: pip install \"psycopg[binary]\""); return; }
+  if (body.ssh_enabled && !dbInfo.ssh_available) { setState("err", "SSH support isn't installed on the server: pip install paramiko"); return; }
+  const btn = $("#connSave"); btn.disabled = true;
+  setState("", force ? "Saving…" : body.ssh_enabled ? "Opening SSH tunnel and testing…" : "Testing connection…");
+  const isNew = editing === null;
+  const r = await api(isNew ? "/api/db/connections" : `/api/db/connections/${editing}`,
+                      { method: isNew ? "POST" : "PUT", body: JSON.stringify(body) });
+  btn.disabled = false;
+  if (r.error && !r.id) {
+    setState("err", (force ? "Couldn't save: " : "Can't connect: ") + r.error);
+    $("#connForce").hidden = force || /name|required|already exists|Enter the|Paste the|Use letters/i.test(r.error);
+    return;
+  }
+  $("#connForce").hidden = true;
+  editing = r.id; connStatus[r.id] = { ok: !!r.ok, error: r.error, info: r };
+  await loadConnections();
+  if (isNew) {   // a newly added database is turned on for the current chat
+    let c = cur(); if (!c) { newChat(); c = cur(); }
+    c.dbs = [...new Set([...chatDbs(c), r.id])]; state.dbDefaults = [...c.dbs]; save();
+  }
+  fillForm(conns.find(x => x.id === r.id)); renderConnList(); render();
+  setState(r.ok ? "ok" : "err", (r.ok ? "Saved. " : "Saved, but ") + describe(connStatus[r.id]).replace(/^C/, r.ok ? "C" : "c"));
+  if (r.ok) loadSchema(true);
+}
+$("#connSave").onclick = () => saveConn(false);
+$("#connForce").onclick = () => saveConn(true);
+$("#connNew").onclick = newConn;
+$("#connDelete").onclick = async () => {
+  const x = conns.find(c => c.id === editing); if (!x) return;
+  if (!confirm(`Delete the connection "${x.name}"? Chats using it will lose access to it.`)) return;
+  const r = await api(`/api/db/connections/${x.id}`, { method: "DELETE" });
+  if (r.error) { setState("err", r.error); return; }
+  delete connStatus[x.id];
+  state.chats.forEach(c => { if (c.dbs) c.dbs = c.dbs.filter(i => i !== x.id); });
+  state.dbDefaults = (state.dbDefaults || []).filter(i => i !== x.id); save();
+  await loadConnections(); render();
+  if (conns.length) selectConn(conns[0].id); else newConn();
+};
+$("#dbClose").onclick = () => dbDlg.close();
+$("#dbRefresh").onclick = () => loadSchema(true);
+function syncSsh(){
+  $("#sshFields").hidden = !$("#sshOn").checked;
+  const a = $("#sshAuth").value;
+  document.querySelectorAll("#sshFields [data-auth]").forEach(el => el.hidden = !el.dataset.auth.split(" ").includes(a));
+}
+$("#sshOn").onchange = syncSsh; $("#sshAuth").onchange = syncSsh;
+$("#openDb").onclick = openDb;
+
+function regenerate(){
+  const c = cur(); if (controller || !c) return;
+  if (c.messages.at(-1)?.role === "assistant") c.messages.pop();
+  send(null);
+}
+function editMessage(i){
+  const c = cur(); if (controller) return;
+  const old = c.messages[i];
+  const t = prompt("Edit message", old.content);
+  if (t === null || (!t.trim() && !old.attachments?.length)) return;
+  c.messages = c.messages.slice(0, i);
+  send(t.trim(), old.attachments);
+}
+
+function setBusy(b){
+  $("#sendIcon").innerHTML = b ? ICON_STOP : ICON_SEND;
+  $("#send").setAttribute("aria-label", b ? "Stop" : "Send");
+  updateSend();
+}
+function updateSend(){
+  if (controller) { $("#send").disabled = false; return; }
+  const uploading = pending.some(p => p.status === "uploading");
+  const ready = pending.some(p => p.status === "ready");
+  $("#send").disabled = uploading || (!$("#input").value.trim() && !ready);
+}
+
+/* ---------- input ---------- */
+const input = $("#input");
+function autosize(){ input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 220) + "px"; }
+input.addEventListener("input", () => { autosize(); updateSend(); });
+input.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+});
+function submit(){
+  if (controller) { controller.abort(); return; }
+  if (pending.some(p => p.status === "uploading")) return;
+  const atts = pending.filter(p => p.status === "ready").map(p => p.meta);
+  const t = input.value.trim(); if (!t && !atts.length) return;
+  pending.forEach(p => p.preview && URL.revokeObjectURL(p.preview));
+  pending = []; renderPending();
+  input.value = ""; autosize(); send(t, atts);
+}
+$("#attachBtn").onclick = () => $("#fileInput").click();
+$("#fileInput").onchange = e => { addFiles(e.target.files); e.target.value = ""; };
+input.addEventListener("paste", e => {
+  const files = [...(e.clipboardData?.files || [])];
+  if (files.length) { e.preventDefault(); addFiles(files); }
+});
+let dragDepth = 0;
+window.addEventListener("dragenter", e => { if (e.dataTransfer?.types.includes("Files")) { dragDepth++; $("#drop").classList.add("on"); } });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; $("#drop").classList.remove("on"); } });
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("#drop").classList.remove("on"); if (e.dataTransfer?.files.length) addFiles(e.dataTransfer.files); });
+$("#send").onclick = submit;
+$("#newChat").onclick = newChat;
+$("#toggleSide").onclick = () => $("#sidebar").classList.toggle("hidden");
+$("#clearAll").onclick = () => { if (controller || !confirm("Delete all chats?")) return; state.chats = []; state.current = null; save(); render(); };
+$("#model").onchange = e => { state.model = e.target.value; save(); };
+
+/* ---------- settings ---------- */
+const dlg = $("#settings");
+$("#openSettings").onclick = () => { $("#sysPrompt").value = state.settings.system; $("#temp").value = state.settings.temperature; $("#autoRun").checked = !!state.settings.autoRun; dlg.showModal(); };
+$("#cancelSettings").onclick = () => dlg.close();
+$("#saveSettings").onclick = () => {
+  const t = parseFloat($("#temp").value);
+  state.settings.system = $("#sysPrompt").value;
+  state.settings.temperature = isNaN(t) ? 0.7 : Math.min(2, Math.max(0, t));
+  state.settings.autoRun = $("#autoRun").checked;
+  save(); dlg.close();
+};
+
+/* ---------- init ---------- */
+(async function init(){
+  if (window.innerWidth < 760) $("#sidebar").classList.add("hidden");
+  const cfg = await fetch("/api/config").then(r => r.json()).catch(() => ({}));
+  if (cfg.max_upload_mb) maxMB = cfg.max_upload_mb;
+  if (cfg.allowed_extensions) {
+    allowedExts = cfg.allowed_extensions; specialNames = cfg.special_names || [];
+    $("#fileInput").accept = allowedExts.join(",");
+    $("#attachBtn").title = "Attach files: images, PDF, Word, Excel, CSV, JSON, text, code and zip";
+  }
+  state.settings ||= { system: cfg.system_prompt || "", temperature: 0.7 };
+  const { models = [cfg.default_model] } = await fetch("/api/models").then(r => r.json()).catch(() => ({}));
+  const sel = $("#model");
+  models.filter(Boolean).forEach(m => sel.add(new Option(m, m)));
+  sel.value = models.includes(state.model) ? state.model : (cfg.default_model || models[0]);
+  if (!state.current && state.chats.length) state.current = state.chats[0].id;
+  await loadConnections();
+  render(); input.focus();
+  const used = [...new Set(state.chats.flatMap(c => chatDbs(c)))];
+  if (used.length) checkStatus(used);
+})();
+</script>
+</body>
+</html>

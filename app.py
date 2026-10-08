@@ -605,6 +605,19 @@ def db_status(cid):
         return _err(e, 404)
 
 
+@app.get("/api/fs/keys")
+def browse_keys():
+    """Folder listing for the SSH key-file picker (names and key types only)."""
+    try:
+        return jsonify(db.ssh_tunnel.browse(request.args.get("path") or None))
+    except PermissionError as e:
+        return _err(e, 403)
+    except FileNotFoundError as e:
+        return _err(e, 404)
+    except Exception as e:
+        return _err(e)
+
+
 @app.get("/api/db/connections/<cid>/schema")
 def db_schema(cid):
     try:

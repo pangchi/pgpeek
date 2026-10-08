@@ -26,6 +26,10 @@ except ImportError:  # optional dependency
     paramiko = None
 
 HOST_KEY_POLICY = os.getenv("SSH_HOST_KEY_POLICY", "accept-new").strip().lower()
+# Key-file browser: folder the Browse dialog may list (default: the app user's home).
+# Set KEY_BROWSE_ROOT=off to disable browsing entirely.
+KEY_BROWSE_ROOT = os.getenv("KEY_BROWSE_ROOT", "~").strip()
+KEY_BROWSE_MAX = 500
 KNOWN_HOSTS = os.getenv("SSH_KNOWN_HOSTS",
                         os.path.join(os.path.dirname(os.path.abspath(__file__)), "ssh_known_hosts"))
 
@@ -71,6 +75,77 @@ def _found_keys():
                 if f not in skip and not f.endswith(".pub") and os.path.isfile(os.path.join(d, f))]
     except OSError:
         return []
+
+
+def _key_kind(path):
+    """Classify a file from its first bytes. Never returns any content."""
+    try:
+        if os.path.getsize(path) > 64 * 1024:
+            return "other"
+        with open(path, "rb") as fh:
+            head = fh.read(64)
+    except OSError:
+        return "unreadable"
+    if head.startswith(b"-----BEGIN") and b"PRIVATE KEY" in head:
+        return "private"
+    if head.startswith(b"PuTTY-User-Key-File"):
+        return "ppk"
+    if head.startswith((b"ssh-", b"ecdsa-", b"sk-ssh-", b"sk-ecdsa-")):
+        return "public"
+    return "other"
+
+
+def browse_root():
+    """Absolute, symlink-resolved root of the key browser, or None if browsing is off."""
+    if KEY_BROWSE_ROOT.lower() in ("", "off", "none", "false", "0"):
+        return None
+    return os.path.realpath(os.path.expanduser(os.path.expandvars(KEY_BROWSE_ROOT)))
+
+
+def browse(path=None):
+    """List one folder for the key-file picker: sub-folders and files with their key type.
+
+    Confined to browse_root(); paths that resolve outside it (including via symlinks or '..')
+    are refused. Only names, sizes and a type label are returned, never file contents.
+    """
+    root = browse_root()
+    if not root:
+        raise PermissionError("Key file browsing is turned off (KEY_BROWSE_ROOT=off). Type the path instead.")
+    if path:
+        target = os.path.realpath(resolve_key_path(path))
+    else:
+        ssh_dir = os.path.realpath(os.path.join(root, ".ssh"))
+        target = ssh_dir if os.path.isdir(ssh_dir) else root
+    if os.path.isfile(target):
+        target = os.path.dirname(target)
+    if target != root and not target.startswith(root + os.sep):
+        raise PermissionError(f"Browsing is limited to {root}. Type the path instead, or change KEY_BROWSE_ROOT.")
+    if not os.path.isdir(target):
+        raise FileNotFoundError(f"Folder not found: {target}")
+    try:
+        names = sorted(os.listdir(target), key=lambda n: (n.startswith("."), n.lower()))
+    except PermissionError:
+        raise PermissionError(f"User '{getpass.getuser()}' can't open {target}.")
+    dirs, files = [], []
+    for name in names:
+        full = os.path.join(target, name)
+        real = os.path.realpath(full)
+        if real != root and not real.startswith(root + os.sep):
+            continue  # symlink pointing outside the root: hide it
+        if os.path.isdir(full):
+            dirs.append({"name": name, "path": full})
+        elif os.path.isfile(full):
+            try:
+                size = os.path.getsize(full)
+            except OSError:
+                size = None
+            files.append({"name": name, "path": full, "size": size, "kind": _key_kind(full)})
+        if len(dirs) + len(files) >= KEY_BROWSE_MAX:
+            break
+    parent = os.path.dirname(target) if target != root else None
+    return {"path": target, "root": root, "parent": parent, "dirs": dirs, "files": files,
+            "truncated": len(dirs) + len(files) >= KEY_BROWSE_MAX,
+            "user": getpass.getuser(), "host": socket.gethostname()}
 
 
 def _check_key_path(raw):

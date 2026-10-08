@@ -171,6 +171,23 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 #dbSchema{max-height:200px;overflow:auto;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;font:12px/1.4 var(--mono);white-space:pre;margin:4px 0 0}
 .row .left{margin-right:auto}
 
+/* key picker */
+.pathrow{display:flex;gap:6px}.pathrow input{flex:1}
+#keyPicker{width:min(560px,92vw)}
+.kpbar{display:flex;align-items:center;gap:8px;margin:8px 0}
+.kpbar code{flex:1;font:12px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;overflow-x:auto;white-space:nowrap}
+#kpUp{padding:4px 10px}#kpUp:disabled{opacity:.4;cursor:default}
+#kpList{border:1px solid var(--line);border-radius:8px;height:300px;overflow-y:auto}
+.kpitem{display:flex;align-items:center;gap:10px;padding:7px 10px;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line)}
+.kpitem:last-child{border-bottom:0}
+.kpitem:hover{background:var(--bg)}
+.kpitem .ic{width:18px;text-align:center;flex:none}
+.kpitem .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kpitem .tag{font-size:11px;padding:1px 7px;border-radius:9px;background:var(--bg);color:var(--muted);flex:none}
+.kpitem .tag.private{background:color-mix(in srgb,#3a9a5b 18%,transparent);color:#2f7d4a}
+.kpitem.dim{opacity:.55;cursor:default}.kpitem.dim:hover{background:none}
+.kpmsg{padding:14px;color:var(--muted);font-size:13px}.kpmsg.err{color:var(--danger)}
+
 /* settings dialog */
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:20px;width:min(520px,92vw)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -273,7 +290,8 @@ dialog textarea{min-height:110px;resize:vertical}
             </select></div>
         </div>
         <div data-auth="password"><label for="sshPass">SSH password</label><input type="password" id="sshPass" autocomplete="new-password"></div>
-        <div data-auth="key_path"><label for="sshKeyPath">Private key path (on the machine running the app)</label><input type="text" id="sshKeyPath" placeholder="~/.ssh/id_ed25519"></div>
+        <div data-auth="key_path"><label for="sshKeyPath">Private key path (on the machine running the app)</label>
+          <div class="pathrow"><input type="text" id="sshKeyPath" placeholder="~/.ssh/id_ed25519"><button class="btn" id="sshBrowse" type="button">Browse…</button></div></div>
         <div data-auth="key_text"><label for="sshKeyText">Private key</label><textarea id="sshKeyText" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----" spellcheck="false"></textarea></div>
         <div data-auth="key_path key_text"><label for="sshPassphrase">Key passphrase (if any)</label><input type="password" id="sshPassphrase" autocomplete="new-password"></div>
       </div>
@@ -288,6 +306,14 @@ dialog textarea{min-height:110px;resize:vertical}
     <button class="btn" id="connForce" hidden>Save anyway</button>
     <button class="btn primary" id="connSave">Test &amp; save</button>
   </div>
+</dialog>
+<dialog id="keyPicker">
+  <h2>Choose a private key</h2>
+  <div class="fieldnote" id="kpWhere"></div>
+  <div class="kpbar"><button class="btn" id="kpUp" type="button" title="Up one folder">↑</button><code id="kpPath"></code></div>
+  <div id="kpList"></div>
+  <label class="check" style="margin-top:10px"><input type="checkbox" id="kpAll"> Show all files</label>
+  <div class="row"><button class="btn" id="kpCancel" type="button">Cancel</button></div>
 </dialog>
 <div id="drop">Drop files to attach</div>
 <dialog id="settings">
@@ -843,6 +869,62 @@ function syncSsh(){
   document.querySelectorAll("#sshFields [data-auth]").forEach(el => el.hidden = !el.dataset.auth.split(" ").includes(a));
 }
 $("#sshOn").onchange = syncSsh; $("#sshAuth").onchange = syncSsh;
+
+/* ---------- key file picker ---------- */
+const kp = $("#keyPicker");
+const KIND = { private: ["Private key", "🔑"], public: ["Public key", "📄"], ppk: ["PuTTY key", "📄"],
+               other: ["", "📄"], unreadable: ["Can't read", "🔒"] };
+let kpData = null;
+async function kpLoad(path, fallback){
+  $("#kpList").innerHTML = `<div class="kpmsg">Loading…</div>`;
+  const r = await api("/api/fs/keys" + (path ? "?path=" + encodeURIComponent(path) : ""));
+  if (r.error && fallback && path) return kpLoad(null, false);   // typed path not browsable: start in the default folder
+  if (r.error) {
+    if (!kpData) { $("#kpPath").textContent = path || ""; $("#kpUp").disabled = true; }
+    $("#kpList").innerHTML = `<div class="kpmsg err"></div>`; $("#kpList .kpmsg").textContent = r.error;
+    return;
+  }
+  kpData = r; kpRender();
+}
+function kpRender(){
+  const r = kpData, all = $("#kpAll").checked, list = $("#kpList");
+  const pb = $("#kpPath"); pb.textContent = r.path; pb.scrollLeft = pb.scrollWidth; $("#kpUp").disabled = !r.parent;
+  $("#kpWhere").textContent = `Files on ${r.host}, as user ${r.user}. Browsing is limited to ${r.root}.`;
+  list.innerHTML = "";
+  const add = (icon, name, tag, tagCls, onclick, title) => {
+    const d = document.createElement("div"); d.className = "kpitem" + (onclick ? "" : " dim");
+    d.innerHTML = `<span class="ic"></span><span class="nm"></span>` + (tag ? `<span class="tag ${tagCls}"></span>` : "");
+    d.querySelector(".ic").textContent = icon; d.querySelector(".nm").textContent = name;
+    if (tag) d.querySelector(".tag").textContent = tag;
+    if (title) d.title = title;
+    if (onclick) d.onclick = onclick;
+    list.appendChild(d);
+  };
+  r.dirs.forEach(x => add("📁", x.name, "", "", () => kpLoad(x.path)));
+  const files = all ? r.files : r.files.filter(f => f.kind === "private");
+  files.forEach(f => {
+    const [label, icon] = KIND[f.kind] || KIND.other;
+    const pick = f.kind === "private" || (all && f.kind === "other")
+      ? () => { $("#sshKeyPath").value = f.path; kp.close(); } : null;
+    add(icon, f.name, label, f.kind, pick,
+        f.kind === "public" ? "Public key: choose the private key (same name without .pub)" :
+        f.kind === "ppk" ? "PuTTY key: export it to OpenSSH format in PuTTYgen first" :
+        f.kind === "unreadable" ? "The app's user can't read this file" : f.path);
+  });
+  if (!r.dirs.length && !files.length) {
+    const hidden = r.files.length - files.length;
+    list.innerHTML = `<div class="kpmsg">${hidden ? `No private keys here (${hidden} other file${hidden > 1 ? "s" : ""} hidden — tick “Show all files”).` : "This folder is empty."}</div>`;
+  }
+  if (r.truncated) { const m = document.createElement("div"); m.className = "kpmsg"; m.textContent = "Only the first 500 items are shown."; list.appendChild(m); }
+}
+$("#sshBrowse").onclick = () => {
+  kpData = null; kp.showModal();
+  const cur = $("#sshKeyPath").value.trim();
+  kpLoad(cur ? cur.replace(/[\\/][^\\/]*$/, "") || cur : null, true);
+};
+$("#kpUp").onclick = () => kpData?.parent && kpLoad(kpData.parent);
+$("#kpAll").onchange = () => kpData && kpRender();
+$("#kpCancel").onclick = () => kp.close();
 $("#openDb").onclick = openDb;
 
 function regenerate(){

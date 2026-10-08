@@ -70,7 +70,8 @@ Open **Database** in the sidebar (or **Manage connections…** in the database m
 Tick **Connect through SSH** and fill in the SSH host, port and user. pgPeek opens the SSH connection and forwards PostgreSQL through it itself, like `ssh -L`, so there's no separate tunnel to keep running.
 
 - **The database host and port are as seen from the SSH server.** If PostgreSQL runs on the SSH machine, use `localhost` and `5432`. If it sits behind a bastion, use its private address, such as `10.0.1.20`.
-- **Sign in with**: a password; a key file on the machine running pgPeek (not the computer with your browser); a pasted private key; or ssh-agent / `~/.ssh` default keys. Ed25519, ECDSA and RSA keys are supported; encrypted keys need their passphrase. PuTTY `.ppk` keys must be exported to OpenSSH format first.
+- **Sign in with**: a password; a key file on the machine running pgPeek (not the computer with your browser), typed or picked with **Browse…**; a pasted private key; or ssh-agent / `~/.ssh` default keys. Ed25519, ECDSA and RSA keys are supported; encrypted keys need their passphrase. PuTTY `.ppk` keys must be exported to OpenSSH format first.
+- **Browse…** (next to the key path) lists folders and files on the machine running pgPeek, starting in `~/.ssh`. Private keys are marked; click one to fill in the path. Public keys and PuTTY `.ppk` keys are shown but can't be picked, with a hint on what to use instead; tick **Show all files** to see everything. The picker header shows which machine and user it's browsing as.
 - Each connection gets its own tunnel. Tunnels are kept alive and reopen automatically if they drop.
 - Connecting reports which step failed: SSH server unreachable, SSH login, database unreachable from the SSH server, or database login.
 - The SSH server must allow port forwarding (`AllowTcpForwarding yes`, which is the default).
@@ -143,6 +144,7 @@ Connections are stored in `connections.sqlite`. Database passwords, SSH password
 
 - **Query results and attached files are sent to the model provider** at `OPENAI_BASE_URL`, like any other message. Only connect data you're allowed to send there, or use a self-hosted model.
 - **Anyone who can open pgPeek can query your databases and read uploaded files.** It has no login. Keep `HOST=127.0.0.1` (the default), or put it behind authentication before exposing it.
+- **The key file picker shows file names in the folder it may browse** (`KEY_BROWSE_ROOT`, default the app user's home). It never sends file contents to the browser, only names, sizes and a key type read from each file's first bytes. Paths outside that folder, including through `..` or symlinks, are refused. Set `KEY_BROWSE_ROOT=off` to disable it, or point it at a narrower folder such as `~/.ssh`.
 - The API key stays on the server; the browser never sees it.
 
 ## Attaching files
@@ -219,6 +221,7 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | `SSH_PASSWORD` or `SSH_KEY_FILE` (+ `SSH_KEY_PASSPHRASE`) | none | Sign-in; with neither, uses ssh-agent and `~/.ssh` default keys |
 | `SSH_HOST_KEY_POLICY` | `accept-new` | Applies to all connections. `strict` refuses unknown servers. |
 | `SSH_KNOWN_HOSTS` | `./ssh_known_hosts` | Where newly trusted host keys are saved |
+| `KEY_BROWSE_ROOT` | `~` (app user's home) | Folder the **Browse…** key picker may list; `off` disables it |
 
 **Files and request size**
 
@@ -247,7 +250,8 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | Message | What to do |
 |---|---|
 | *Request failed … context length* | The request is larger than the model accepts. Lower `MAX_SEND_CHARS`, or start a new chat. |
-| *SSH key file not found* | The path must exist on the machine running pgPeek, readable by the account it runs as. The message lists the keys it did find. Or use **Paste private key**. |
+| *SSH key file not found* | The path must exist on the machine running pgPeek, readable by the account it runs as. Use **Browse…** to pick it, or **Paste private key**. |
+| *Browsing is limited to …* | The key is outside `KEY_BROWSE_ROOT`. Type its path instead, or widen `KEY_BROWSE_ROOT`. |
 | *Connected to SSH, but the SSH server couldn't reach the database* | The database host/port are wrong as seen from the SSH server (often `localhost:5432`), or port forwarding is disabled. |
 | *SSH host key … has CHANGED* | If the server was rebuilt, delete its line from `ssh_known_hosts`. Otherwise, don't connect. |
 | *Can't decrypt saved connection* | `secret.key` or `APP_SECRET_KEY` changed. Restore the original key, or edit the connection and re-enter its passwords. |
@@ -292,6 +296,7 @@ All responses are JSON unless noted.
 - `POST /api/db/connections` — create; `PUT /api/db/connections/<id>` — update (blank secrets keep the saved ones); `DELETE /api/db/connections/<id>`. Body: `{name, host, port, dbname, user, password, sslmode, schemas, context, ssh_enabled, ssh_host, ssh_port, ssh_user, ssh_auth, ssh_password, ssh_key_path, ssh_key_text, ssh_passphrase, force}`, where `ssh_auth` is `password`, `key_path`, `key_text` or `agent`, and `force: true` saves without testing.
 - `GET /api/db/connections/<id>/status` — tests the connection
 - `GET /api/db/connections/<id>/schema[?refresh=1]` — `{text, tables}`
+- `GET /api/fs/keys[?path=]` — one folder for the key picker: `{path, root, parent, dirs: [{name, path}], files: [{name, path, size, kind}], user, host}`, where `kind` is `private`, `public`, `ppk`, `other` or `unreadable`. 403 outside `KEY_BROWSE_ROOT` or when it's `off`.
 - `POST /api/db/query` — `{sql, dbs}` → `{db_id, db_name, columns, rows, row_count, truncated, ms, text}` or `{error, text}`; `text` is what the model receives
 
 ## Running in production

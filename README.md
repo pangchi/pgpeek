@@ -1,6 +1,6 @@
 # pgPeek
 
-**Version 1.1.1** · [Changelog](CHANGELOG.md)
+**Version 1.3.0** · [Changelog](CHANGELOG.md)
 
 Ask questions about your PostgreSQL databases in plain language. pgPeek is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
@@ -48,6 +48,8 @@ Open http://127.0.0.1:5000, then:
 3. Ask a question, e.g. *"How many jobs finished last week, by board?"* The model replies with a SQL block; press **Run**, and it answers from the result.
 
 To skip pressing Run, turn on **Settings → Run the model's SQL queries automatically**.
+
+**Colour theme**: **Settings → Appearance** picks System (follows your computer's light or dark mode), Light or Dark, and **Colour** picks one of seven colours: Teal (the default), Blue, Violet, Green, Amber, Rose or Graphite. Choices preview as you click and apply on **Save**; Cancel puts the old theme back. The theme is kept per browser (local storage key `pgpeek.theme`), and the Help page follows it.
 
 **Typing and editing messages**: Enter sends and Shift+Enter starts a new line; the message box grows to 40% of the window, then scrolls. **Edit** under any of your messages opens it in place, with its line breaks, in a box that grows to 60% of the window. There, Enter adds a new line, **Ctrl+Enter** (⌘+Enter on Mac) or **Save & send** resends it, and **Esc** or **Cancel** leaves it unchanged. Saving replaces that message and everything after it (the editor says how many messages that is), and keeps the message's attachments.
 

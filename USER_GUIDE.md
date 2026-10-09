@@ -176,9 +176,13 @@ Usually your administrator sets these up. To add one yourself: **Database → + 
 
 | Setting | What it does |
 |---|---|
+| Appearance | **System** follows your computer's light or dark mode; **Light** and **Dark** fix it. |
+| Colour | The colour theme: Teal, Blue, Violet, Green, Amber, Rose or Graphite. Click to preview; **Save** keeps it, **Cancel** puts the old one back. |
 | System prompt | Standing instructions for every chat, such as *"Answer briefly. Use Singapore dates."* |
 | Temperature | 0 gives focused, repeatable answers; higher values give more varied wording. 0.2–0.7 suits data questions. |
 | Run SQL automatically | Runs the AI's queries without pressing **Run**. It stops after 5 queries in a row so a confused AI can't loop. |
+
+Appearance and colour are remembered in this browser only, so each person (and each browser) can pick their own.
 
 ## Tips for better answers
 

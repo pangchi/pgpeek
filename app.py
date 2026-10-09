@@ -509,9 +509,17 @@ def delete_files():
 GUIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "USER_GUIDE.md")
 GUIDE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>pgPeek user guide</title>
+<script>
+// same colour theme as the app (saved by Settings in this browser)
+try { const t = JSON.parse(localStorage.getItem("pgpeek.theme") || "{}"), r = document.documentElement, ok = c => /^#[0-9a-f]{6}$/i.test(c || "");
+  if (t.mode === "light" || t.mode === "dark") r.dataset.mode = t.mode;
+  if (ok(t.light)) r.style.setProperty("--accent-l", t.light);
+  if (ok(t.dark)) r.style.setProperty("--accent-d", t.dark); } catch (e) {}
+</script>
 <style>
-:root{--bg:#fff;--ink:#1b2430;--muted:#66727f;--line:#dfe3e8;--code:#f4f6f8;--accent:#2f6f8f}
-@media (prefers-color-scheme:dark){:root{--bg:#141a21;--ink:#e3e8ee;--muted:#8c99a6;--line:#2a3440;--code:#1d252f;--accent:#5ba3c6}}
+:root{--bg:#fff;--ink:#1b2430;--muted:#66727f;--line:#dfe3e8;--code:#f4f6f8;--accent:var(--accent-l,#2f6f8f);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light]){--bg:#141a21;--ink:#e3e8ee;--muted:#8c99a6;--line:#2a3440;--code:#1d252f;--accent:var(--accent-d,#5ba3c6);color-scheme:dark}}
+:root[data-mode=dark]{--bg:#141a21;--ink:#e3e8ee;--muted:#8c99a6;--line:#2a3440;--code:#1d252f;--accent:var(--accent-d,#5ba3c6);color-scheme:dark}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 main{max-width:820px;margin:0 auto;padding:32px 20px 64px}
 h1{font-size:28px;margin:0 0 12px}h2{font-size:21px;margin:36px 0 10px;padding-top:12px;border-top:1px solid var(--line)}

@@ -10,19 +10,51 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+/* colour theme: applied before the page draws so it doesn't flash */
+try { const t = JSON.parse(localStorage.getItem("pgpeek.theme") || "{}"), r = document.documentElement;
+  if (t.mode === "light" || t.mode === "dark") r.dataset.mode = t.mode;
+  if (t.accent && t.accent !== "teal") r.dataset.accent = t.accent; } catch (e) {}
+</script>
 <style>
 :root{
   --bg:#f6f7f9; --panel:#ffffff; --side:#1c2733; --side-ink:#c9d3dd; --side-hi:#2a3846;
   --ink:#1b2430; --muted:#66727f; --line:#dfe3e8; --accent:#2f6f8f; --accent-ink:#fff;
-  --user:#e8eff4; --danger:#b4443a;
+  --user:color-mix(in srgb,var(--accent) 11%,#fff); --danger:#b4443a; color-scheme:light;
   --font:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
 }
-@media (prefers-color-scheme:dark){:root{
+@media (prefers-color-scheme:dark){:root:not([data-mode=light]) .swatch{background:var(--sw-d)}}
+:root[data-mode=dark] .swatch{background:var(--sw-d)}
+/* colour themes: mode = data-mode on <html> (light | dark | none = follow the system), colour = data-accent */
+@media (prefers-color-scheme:dark){:root:not([data-mode=light]){
   --bg:#141a21; --panel:#1a222b; --side:#0f141a; --side-ink:#a9b6c3; --side-hi:#1e2833;
   --ink:#e3e8ee; --muted:#8c99a6; --line:#2a3440; --accent:#5ba3c6; --accent-ink:#0f141a;
-  --user:#223040; --danger:#e07a70;
+  --user:color-mix(in srgb,var(--accent) 16%,#1a222b); --danger:#e07a70; color-scheme:dark;
 }}
+:root[data-mode=dark]{
+  --bg:#141a21; --panel:#1a222b; --side:#0f141a; --side-ink:#a9b6c3; --side-hi:#1e2833;
+  --ink:#e3e8ee; --muted:#8c99a6; --line:#2a3440; --accent:#5ba3c6; --accent-ink:#0f141a;
+  --user:color-mix(in srgb,var(--accent) 16%,#1a222b); --danger:#e07a70; color-scheme:dark;
+}
+:root[data-accent=blue]{--accent:#2f5fb3;--side:#1a2338;--side-hi:#28344f}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light])[data-accent=blue]{--accent:#7aa2ea;--side:#0f1420;--side-hi:#1c2638}}
+:root[data-mode=dark][data-accent=blue]{--accent:#7aa2ea;--side:#0f1420;--side-hi:#1c2638}
+:root[data-accent=violet]{--accent:#6a4fb3;--side:#241e38;--side-hi:#342c4f}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light])[data-accent=violet]{--accent:#a890ec;--side:#14111f;--side-hi:#241f36}}
+:root[data-mode=dark][data-accent=violet]{--accent:#a890ec;--side:#14111f;--side-hi:#241f36}
+:root[data-accent=green]{--accent:#2f7d55;--side:#18291f;--side-hi:#25392d}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light])[data-accent=green]{--accent:#62c08d;--side:#0e1612;--side-hi:#1b2a21}}
+:root[data-mode=dark][data-accent=green]{--accent:#62c08d;--side:#0e1612;--side-hi:#1b2a21}
+:root[data-accent=amber]{--accent:#9c5a14;--side:#2b2219;--side-hi:#3d3125}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light])[data-accent=amber]{--accent:#e2a356;--side:#17120d;--side-hi:#2a2118}}
+:root[data-mode=dark][data-accent=amber]{--accent:#e2a356;--side:#17120d;--side-hi:#2a2118}
+:root[data-accent=rose]{--accent:#b03a5b;--side:#2d1c24;--side-hi:#402833}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light])[data-accent=rose]{--accent:#ea7f9c;--side:#170f13;--side-hi:#2a1c22}}
+:root[data-mode=dark][data-accent=rose]{--accent:#ea7f9c;--side:#170f13;--side-hi:#2a1c22}
+:root[data-accent=graphite]{--accent:#4a5563;--side:#1f2329;--side-hi:#2e333b}
+@media (prefers-color-scheme:dark){:root:not([data-mode=light])[data-accent=graphite]{--accent:#a9b3bf;--side:#111317;--side-hi:#1f2329}}
+:root[data-mode=dark][data-accent=graphite]{--accent:#a9b3bf;--side:#111317;--side-hi:#1f2329}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{font:15px/1.6 var(--font);color:var(--ink);background:var(--bg);display:flex;overflow:hidden}
@@ -42,7 +74,8 @@ aside.hidden{margin-left:-260px}
 .item:hover button,.item.active button{opacity:.7}
 .item button:hover{opacity:1}
 .sidefoot{border-top:1px solid var(--side-hi);padding-top:8px;font-size:13px}
-.sidefoot button{width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;color:var(--side-ink)}
+.sidefoot button{width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;color:var(--side-ink);display:flex;align-items:center;gap:10px}
+.sidefoot .ico{flex:none;opacity:.85}
 .sidefoot button:hover{background:var(--side-hi);color:#fff}
 
 /* main */
@@ -250,7 +283,7 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 .strow .del:hover{color:var(--danger);background:var(--bg)}
 .strow .del:disabled{opacity:.3;cursor:default}
 .stempty{padding:18px;color:var(--muted);font-size:14px}
-#helpLink{display:block;padding:8px 10px;border-radius:6px;color:var(--side-ink);text-decoration:none;font-size:13px}
+#helpLink{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;color:var(--side-ink);text-decoration:none;font-size:13px}
 #helpLink:hover{background:var(--side-hi);color:#fff}
 #appVersion{padding:6px 10px 0;font-size:11px;color:var(--side-ink);opacity:.6}
 @media (max-width:700px){.strow{grid-template-columns:24px minmax(0,1fr) 70px 30px}.strow .dt,.strow .use{display:none}}
@@ -259,6 +292,14 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:20px;width:min(520px,92vw)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 14px;font-size:18px;font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--bg)}
+.seg button{border:0;background:none;padding:6px 14px;cursor:pointer;font-size:13px;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-checked=true]{background:var(--accent);color:var(--accent-ink)}
+.swatches{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.swatch{width:26px;height:26px;border-radius:50%;border:2px solid var(--panel);background:var(--sw-l);cursor:pointer;box-shadow:0 0 0 1px var(--line);padding:0}
+.swatch[aria-checked=true]{box-shadow:0 0 0 2px var(--ink)}
+#accentName{font-size:13px;color:var(--muted);margin-left:4px}
 dialog label{display:block;font-size:13px;color:var(--muted);margin:12px 0 4px}
 dialog textarea,dialog input[type=number]{width:100%;border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--bg)}
 dialog textarea{min-height:110px;resize:vertical}
@@ -280,14 +321,14 @@ dialog textarea{min-height:110px;resize:vertical}
   </button>
   <div id="chatList"></div>
   <div class="sidefoot">
-    <button id="openSettings">Settings</button>
-    <button id="openDb">Database</button>
-    <button id="exportAll">Export all chats</button>
-    <button id="importBtn">Import chats</button>
+    <button id="openSettings"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg> Settings</button>
+    <button id="openDb"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg> Database</button>
+    <button id="exportAll"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg> Export all chats</button>
+    <button id="importBtn"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3M7 8l5-5 5 5M5 21h14"/></svg> Import chats</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
-    <button id="openStorage">Storage</button>
-    <button id="clearAll">Delete all chats</button>
-    <a id="helpLink" href="/guide" target="_blank" rel="noopener">Help</a>
+    <button id="openStorage"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M5 13l2.5-8h9L19 13M6 17h.01M10 17h.01"/></svg> Storage</button>
+    <button id="clearAll"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6"/></svg> Delete all chats</button>
+    <a id="helpLink" href="/guide" target="_blank" rel="noopener"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01"/></svg> Help</a>
     <div id="appVersion" title="pgPeek version">pgPeek {{ version }}</div>
   </div>
 </aside>
@@ -428,6 +469,12 @@ dialog textarea{min-height:110px;resize:vertical}
 </dialog>
 <dialog id="settings">
   <h2>Settings</h2>
+  <label>Appearance</label>
+  <div class="seg" id="modeSeg" role="radiogroup" aria-label="Appearance">
+    <button type="button" data-mode="system">System</button><button type="button" data-mode="light">Light</button><button type="button" data-mode="dark">Dark</button>
+  </div>
+  <label>Colour</label>
+  <div class="swatches" id="accentPick" role="radiogroup" aria-label="Colour"><button type="button" class="swatch" data-accent="teal" title="Teal" aria-label="Teal" style="--sw-l:#2f6f8f;--sw-d:#5ba3c6"></button><button type="button" class="swatch" data-accent="blue" title="Blue" aria-label="Blue" style="--sw-l:#2f5fb3;--sw-d:#7aa2ea"></button><button type="button" class="swatch" data-accent="violet" title="Violet" aria-label="Violet" style="--sw-l:#6a4fb3;--sw-d:#a890ec"></button><button type="button" class="swatch" data-accent="green" title="Green" aria-label="Green" style="--sw-l:#2f7d55;--sw-d:#62c08d"></button><button type="button" class="swatch" data-accent="amber" title="Amber" aria-label="Amber" style="--sw-l:#9c5a14;--sw-d:#e2a356"></button><button type="button" class="swatch" data-accent="rose" title="Rose" aria-label="Rose" style="--sw-l:#b03a5b;--sw-d:#ea7f9c"></button><button type="button" class="swatch" data-accent="graphite" title="Graphite" aria-label="Graphite" style="--sw-l:#4a5563;--sw-d:#a9b3bf"></button><span id="accentName"></span></div>
   <label for="sysPrompt">System prompt</label>
   <textarea id="sysPrompt"></textarea>
   <label for="temp">Temperature (0–2)</label>
@@ -1636,13 +1683,39 @@ $("#importFile").onchange = e => { const f = e.target.files[0]; e.target.value =
 
 /* ---------- settings ---------- */
 const dlg = $("#settings");
-$("#openSettings").onclick = () => { $("#sysPrompt").value = state.settings.system; $("#temp").value = state.settings.temperature; $("#autoRun").checked = !!state.settings.autoRun; dlg.showModal(); };
+/* ---------- colour theme (per browser, localStorage "pgpeek.theme") ---------- */
+const THEMES = {teal:{name:"Teal",light:"#2f6f8f",dark:"#5ba3c6"},blue:{name:"Blue",light:"#2f5fb3",dark:"#7aa2ea"},violet:{name:"Violet",light:"#6a4fb3",dark:"#a890ec"},green:{name:"Green",light:"#2f7d55",dark:"#62c08d"},amber:{name:"Amber",light:"#9c5a14",dark:"#e2a356"},rose:{name:"Rose",light:"#b03a5b",dark:"#ea7f9c"},graphite:{name:"Graphite",light:"#4a5563",dark:"#a9b3bf"}};
+function loadTheme(){
+  try { const t = JSON.parse(localStorage.getItem("pgpeek.theme") || "{}");
+    return { mode: ["light","dark"].includes(t.mode) ? t.mode : "system", accent: THEMES[t.accent] ? t.accent : "teal" }; }
+  catch (e) { return { mode: "system", accent: "teal" }; }
+}
+function applyTheme(t){
+  const r = document.documentElement;
+  if (t.mode === "system") delete r.dataset.mode; else r.dataset.mode = t.mode;
+  if (t.accent === "teal") delete r.dataset.accent; else r.dataset.accent = t.accent;
+  document.querySelectorAll("#modeSeg button").forEach(b => b.setAttribute("aria-checked", b.dataset.mode === t.mode));
+  document.querySelectorAll("#accentPick .swatch").forEach(b => b.setAttribute("aria-checked", b.dataset.accent === t.accent));
+  $("#accentName").textContent = THEMES[t.accent].name;
+}
+function saveTheme(t){
+  // the colours go along so the Help page can match without its own copy of the palette
+  try { localStorage.setItem("pgpeek.theme", JSON.stringify({ ...t, light: THEMES[t.accent].light, dark: THEMES[t.accent].dark })); } catch (e) {}
+}
+let theme = loadTheme(), themeDraft = null;
+applyTheme(theme);
+document.querySelectorAll("#modeSeg button").forEach(b => b.onclick = () => { themeDraft = { ...themeDraft, mode: b.dataset.mode }; applyTheme(themeDraft); });
+document.querySelectorAll("#accentPick .swatch").forEach(b => b.onclick = () => { themeDraft = { ...themeDraft, accent: b.dataset.accent }; applyTheme(themeDraft); });
+$("#openSettings").onclick = () => { themeDraft = { ...theme }; applyTheme(themeDraft); $("#sysPrompt").value = state.settings.system; $("#temp").value = state.settings.temperature; $("#autoRun").checked = !!state.settings.autoRun; dlg.showModal(); };
+// Cancel, Esc or clicking away undoes a previewed theme; Save keeps it
+dlg.addEventListener("close", () => { if (themeDraft) { applyTheme(theme); themeDraft = null; } });
 $("#cancelSettings").onclick = () => dlg.close();
 $("#saveSettings").onclick = () => {
   const t = parseFloat($("#temp").value);
   state.settings.system = $("#sysPrompt").value;
   state.settings.temperature = isNaN(t) ? 0.7 : Math.min(2, Math.max(0, t));
   state.settings.autoRun = $("#autoRun").checked;
+  if (themeDraft) { theme = themeDraft; themeDraft = null; saveTheme(theme); }
   save(); dlg.close();
 };
 

@@ -8,6 +8,20 @@ All notable changes to pgPeek. Versions follow `MAJOR.MINOR.PATCH`:
 
 The version is set in `version.py`. It's shown at the bottom of the sidebar and on the Help page, returned by `/api/version`, and recorded in chat exports.
 
+## 1.3.0 — 2026-10-09
+
+### Added
+- **Colour themes.** Settings → **Appearance**: System (follows the computer's light/dark mode), Light or Dark. **Colour**: Teal (default), Blue, Violet, Green, Amber, Rose or Graphite, each with its own sidebar tint and matching light and dark shades. Choices preview live; Save keeps them, Cancel or Esc reverts. Saved per browser in local storage (`pgpeek.theme`) and applied before the page draws, so there's no flash on load.
+- The Help page follows the chosen mode and colour.
+
+### Changed
+- Your message bubbles take a light tint of the theme colour.
+
+## 1.2.0 — 2026-10-09
+
+### Changed
+- Sidebar items now have icons: Settings (gear), Database (cylinder), Export all chats, Import chats, Storage, Delete all chats (bin) and Help.
+
 ## 1.1.1 — 2026-10-09
 
 ### Changed

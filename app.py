@@ -26,6 +26,7 @@ import mimetypes
 import os
 import re
 import shutil
+import time
 import uuid
 import zipfile
 import posixpath
@@ -34,6 +35,7 @@ import openai
 
 import db
 import filesql
+from version import __version__ as VERSION
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context
 from werkzeug.utils import secure_filename
 
@@ -283,7 +285,7 @@ def upload():
     mime = f.mimetype if f.mimetype and f.mimetype != "application/octet-stream" else (
         mimetypes.guess_type(name)[0] or "application/octet-stream")
     meta = {"id": fid, "name": f.filename, "file": name, "mime": mime,
-            "size": os.path.getsize(path), "kind": "image", "truncated": False}
+            "size": os.path.getsize(path), "kind": "image", "truncated": False, "uploaded": time.time()}
     tabular = filesql.available() and filesql.is_tabular(name)
     limit_mb = MAX_TABLE_UPLOAD_MB if tabular else MAX_UPLOAD_MB
     if meta["size"] > limit_mb * 1024 * 1024:
@@ -353,6 +355,122 @@ def upload():
     if meta.get("tables"):
         out["tables"] = [{"rows": t["rows"], "columns": len(t["columns"]), "sheet": t["sheet"]} for t in meta["tables"]]
     return jsonify(out)
+
+
+# ---------------------------------------------------------------- stored uploads (Storage panel)
+def _folder_bytes(folder):
+    total = 0
+    for root, _, files in os.walk(folder):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+@app.get("/api/files")
+def list_files():
+    """Every upload on the server: name, original size, size on disk (incl. tables), upload time, tables."""
+    out, total = [], 0
+    try:
+        names = os.listdir(UPLOAD_DIR)
+    except OSError:
+        names = []
+    for fid in names:
+        folder = os.path.join(UPLOAD_DIR, fid)
+        if not ID_RE.match(fid) or not os.path.isdir(folder):
+            continue
+        disk = _folder_bytes(folder)
+        total += disk
+        meta = load_meta(fid)
+        if meta:
+            uploaded = meta.get("uploaded") or os.path.getmtime(os.path.join(folder, "meta.json"))
+            out.append({"id": fid, "name": meta["name"], "kind": meta["kind"], "size": meta.get("size", 0),
+                        "disk": disk, "uploaded": uploaded, "stats": meta.get("stats"),
+                        "tables": [{"rows": t["rows"], "columns": len(t["columns"]), "sheet": t["sheet"]}
+                                   for t in meta.get("tables") or []]})
+        else:  # an upload that never finished (e.g. the server stopped mid-way)
+            out.append({"id": fid, "name": "(incomplete upload)", "kind": "incomplete", "size": 0, "disk": disk,
+                        "uploaded": os.path.getmtime(folder), "incomplete": True, "tables": []})
+    out.sort(key=lambda f: f["uploaded"], reverse=True)
+    return jsonify(files=out, total_disk=total)
+
+
+def delete_uploads(ids):
+    deleted, freed = [], 0
+    for fid in ids:
+        if not isinstance(fid, str) or not ID_RE.match(fid):
+            continue
+        folder = os.path.join(UPLOAD_DIR, fid)
+        if os.path.isdir(folder):
+            size = _folder_bytes(folder)
+            shutil.rmtree(folder, ignore_errors=True)
+            if not os.path.exists(folder):
+                deleted.append(fid)
+                freed += size
+    return {"deleted": deleted, "freed": freed}
+
+
+@app.delete("/api/files/<fid>")
+def delete_file(fid):
+    if not ID_RE.match(fid):
+        abort(404)
+    r = delete_uploads([fid])
+    return (jsonify(r), 200) if r["deleted"] else (jsonify(error="That file no longer exists."), 404)
+
+
+@app.post("/api/files/delete")
+def delete_files():
+    ids = (request.get_json(force=True) or {}).get("ids") or []
+    return jsonify(delete_uploads(ids[:5000] if isinstance(ids, list) else []))
+
+
+# ---------------------------------------------------------------- user guide (Help link)
+GUIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "USER_GUIDE.md")
+GUIDE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>pgPeek user guide</title>
+<style>
+:root{--bg:#fff;--ink:#1b2430;--muted:#66727f;--line:#dfe3e8;--code:#f4f6f8;--accent:#2f6f8f}
+@media (prefers-color-scheme:dark){:root{--bg:#141a21;--ink:#e3e8ee;--muted:#8c99a6;--line:#2a3440;--code:#1d252f;--accent:#5ba3c6}}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:820px;margin:0 auto;padding:32px 20px 64px}
+h1{font-size:28px;margin:0 0 12px}h2{font-size:21px;margin:36px 0 10px;padding-top:12px;border-top:1px solid var(--line)}
+a{color:var(--accent)}code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:.9em}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto}pre code{padding:0}
+table{border-collapse:collapse;margin:10px 0;font-size:15px;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:var(--code)}
+blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--accent);background:var(--code);border-radius:0 8px 8px 0}
+#raw{white-space:pre-wrap}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+</head><body><main id="doc">Loading…</main>
+<footer style="max-width:820px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px">pgPeek __VERSION__</footer>
+<script>
+fetch("guide.md").then(r => r.text()).then(text => {
+  const doc = document.getElementById("doc");
+  if (!window.marked || !window.DOMPurify) { doc.innerHTML = '<pre id="raw"></pre>'; doc.firstChild.textContent = text; return; }
+  doc.innerHTML = DOMPurify.sanitize(marked.parse(text));
+  // GitHub-style heading ids so the contents links work
+  doc.querySelectorAll("h1,h2,h3").forEach(h => { h.id = h.textContent.trim().toLowerCase().replace(/[^a-z0-9 -]/g, "").replace(/ /g, "-"); });
+  if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
+});
+</script></body></html>"""
+
+
+@app.get("/guide")
+def guide():
+    return Response(GUIDE_PAGE.replace("__VERSION__", VERSION), mimetype="text/html")
+
+
+@app.get("/guide.md")
+def guide_md():
+    try:
+        with open(GUIDE_FILE, encoding="utf-8") as fh:
+            return Response(fh.read(), mimetype="text/markdown; charset=utf-8")
+    except OSError:
+        abort(404)
 
 
 @app.get("/files/<fid>")
@@ -516,12 +634,17 @@ def doc_chunks(docs, size):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", version=VERSION)
+
+
+@app.get("/api/version")
+def version():
+    return jsonify(name="pgPeek", version=VERSION)
 
 
 @app.get("/api/config")
 def config():
-    return jsonify(default_model=DEFAULT_MODEL, system_prompt=SYSTEM_PROMPT, base_url=BASE_URL,
+    return jsonify(version=VERSION, default_model=DEFAULT_MODEL, system_prompt=SYSTEM_PROMPT, base_url=BASE_URL,
                    max_upload_mb=MAX_UPLOAD_MB, max_table_upload_mb=MAX_TABLE_UPLOAD_MB,
                    table_extensions=sorted(filesql.TABLE_EXTS) if filesql.available() else [], max_send_chars=MAX_SEND_CHARS, allowed_extensions=sorted(ALLOWED_EXTS),
                    special_names=sorted(SPECIAL_NAMES))
@@ -759,6 +882,7 @@ if __name__ == "__main__":
     # Debug mode is off by default: its in-browser debugger can run code, and its auto-reloader would
     # restart the server whenever a .zip lands in uploads/. FLASK_DEBUG=1 turns it on for development.
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    print(f" * pgPeek {VERSION}")
     app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 5000)), debug=debug, threaded=True,
             # watchdog matches patterns per path segment, so list each depth under uploads/
             exclude_patterns=[os.path.join(UPLOAD_DIR, *["*"] * n) for n in (1, 2, 3)] + ["*.sqlite", "*.duckdb"]

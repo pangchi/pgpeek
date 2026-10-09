@@ -1,5 +1,7 @@
 # pgPeek
 
+**Version 1.0.0** · [Changelog](CHANGELOG.md)
+
 Ask questions about your PostgreSQL databases in plain language. pgPeek is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
 - **Databases**: save any number of PostgreSQL connections, direct or through SSH, and choose which ones each chat can use. Queries are strictly read-only.
@@ -7,6 +9,9 @@ Ask questions about your PostgreSQL databases in plain language. pgPeek is a Cha
 - **Any model**: OpenAI, Azure OpenAI proxies, vLLM, Ollama, LM Studio, LiteLLM, OpenRouter and others. No tool/function-calling support needed.
 - **Big inputs**: requests larger than a set size are split into parts automatically and combined into one answer.
 - **Keep your chats**: chats are saved in your browser between sessions; export them as JSON backups to move or restore, or as a standalone HTML page to read, print or share.
+- **Tidy storage**: remove files from a chat, delete a chat together with its files, and see and clean up everything uploaded in the **Storage** panel.
+
+**New to pgPeek?** The [user guide](USER_GUIDE.md) explains everyday use without the technical detail. It's also built into the app: click **Help** in the sidebar, or open `/guide`. This README covers installation, configuration and how things work.
 
 ## Contents
 
@@ -15,6 +20,7 @@ Ask questions about your PostgreSQL databases in plain language. pgPeek is a Cha
 - [Security](#security)
 - [Attaching files](#attaching-files)
 - [Querying CSV and Excel files](#querying-csv-and-excel-files)
+- [Removing files and freeing space](#removing-files-and-freeing-space)
 - [Large requests](#large-requests)
 - [Saving, exporting and importing chats](#saving-exporting-and-importing-chats)
 - [Configuration](#configuration)
@@ -22,6 +28,7 @@ Ask questions about your PostgreSQL databases in plain language. pgPeek is a Cha
 - [Project layout](#project-layout)
 - [API](#api)
 - [Running in production](#running-in-production)
+- [Versions and updating](#versions-and-updating)
 - [Upgrading from DB Helper or flask-chat](#upgrading-from-db-helper-or-flask-chat)
 
 ## Quick start
@@ -148,7 +155,7 @@ Connections are stored in `connections.sqlite`. Database passwords, SSH password
 ### What leaves your machine
 
 - **Query results and attached files are sent to the model provider** at `OPENAI_BASE_URL`, like any other message. Only connect data you're allowed to send there, or use a self-hosted model.
-- **Anyone who can open pgPeek can query your databases and read uploaded files.** It has no login. Keep `HOST=127.0.0.1` (the default), or put it behind authentication before exposing it.
+- **Anyone who can open pgPeek can query your databases, read uploaded files, and delete uploads** (Storage panel or `/api/files`). It has no login. Keep `HOST=127.0.0.1` (the default), or put it behind authentication before exposing it.
 - **The key file picker shows file names in the folder it may browse** (`KEY_BROWSE_ROOT`, default the app user's home). It never sends file contents to the browser, only names, sizes and a key type read from each file's first bytes. Paths outside that folder, including through `..` or symlinks, are refused. Set `KEY_BROWSE_ROOT=off` to disable it, or point it at a narrower folder such as `~/.ssh`.
 - The API key stays on the server; the browser never sees it.
 
@@ -215,6 +222,30 @@ Excel is slower because each sheet is converted to CSV first. With `python-calam
 Disk use per file is the original (kept so it can be opened from the chat) plus the table, which is usually much smaller than the source.
 
 **Limits**: CSV/TSV/Excel up to `MAX_TABLE_UPLOAD_MB` (200 MB), other files up to `MAX_UPLOAD_MB` (20 MB). A CSV that can't be read as a table falls back to text, and then the 20 MB limit applies. Excel allows about a million rows per sheet; bigger data needs several sheets or a CSV. CSV and Excel files inside a zip are sent as text, not tables; attach them directly to query them. Excel formulas give their last saved values (see [Attaching files](#attaching-files)).
+
+## Removing files and freeing space
+
+Uploads are kept on the server in `uploads/<id>/` (the original file, plus `tables.duckdb` for CSV/Excel) until something deletes them. A 200 MB CSV takes about 225 MB. There are three ways to remove them, and every one asks for confirmation first.
+
+**Remove a file from a sent message**: hover over the file in your message and click its **✕**.
+
+- The file is taken out of the chat. It's no longer sent with the conversation, its table disappears from the `files` source (other tables keep their names), and the message shows *Removed from chat: name*.
+- The model is told, in that message, that the attachment was removed, so it doesn't keep referring to it. Earlier answers and result cards stay.
+- **Also delete it from the server** is ticked when no other chat in this browser uses the file, and shows the space it frees. If another chat uses it, the option is greyed out and names that chat.
+- Removing an attachment is saved with the chat, survives export/import, and is noted in the HTML export.
+
+**Delete a chat** (✕ in the sidebar) or **Delete all chats**: the confirmation offers **Also delete its uploaded files from the server**, with their total size. Files still used by other chats in this browser are listed as kept and aren't deleted. Untick it to keep the files.
+
+**Storage panel** (sidebar → **Storage**): every upload on the server with its name and type (table rows, zip contents), original size, size on disk, upload date, and the chats in this browser that use it. Click a chat to open it.
+
+- The summary shows the total on disk and how much is used by files no chat here refers to; the filter shows only those.
+- Delete one file (🗑), tick several and **Delete selected**, or **Delete all unused**.
+- Deleting a file that chats here still use also removes it from those chats (as above).
+- Uploads that never finished (for example, the server stopped mid-upload) appear as *(incomplete upload)* so they can be cleaned up.
+
+**What "used" means**: chats live in each browser, so pgPeek only knows about the chats in the browser you're using. On a shared server, a file marked *Not used here* may be in someone else's chats, or in an exported chat file. Imported chats whose files were deleted show them as unavailable, and the model is told the file is missing. The HTML export embeds images, so it doesn't depend on files staying on the server.
+
+Deleting is permanent. There's no recycle bin.
 
 ## Large requests
 
@@ -331,6 +362,7 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | *Connected to SSH, but the SSH server couldn't reach the database* | The database host/port are wrong as seen from the SSH server (often `localhost:5432`), or port forwarding is disabled. |
 | *SSH host key … has CHANGED* | If the server was rebuilt, delete its line from `ssh_known_hosts`. Otherwise, don't connect. |
 | *Can't decrypt saved connection* | `secret.key` or `APP_SECRET_KEY` changed. Restore the original key, or edit the connection and re-enter its passwords. |
+| Disk filling up with uploads | Open **Storage** and use **Delete all unused**, or delete old chats with their files. See [Removing files and freeing space](#removing-files-and-freeing-space). |
 | Chats missing after reopening pgPeek | Check the address matches the one you used before (`localhost` vs `127.0.0.1` vs an IP), and that you're not in a private window. Restore from an exported JSON file with **Import chats**. |
 | *Couldn't save chats: the browser's storage is full* | Export your chats, then delete old ones. |
 | Chip is red / "Database off" | Click it to tick databases or check which one is unreachable. |
@@ -350,6 +382,9 @@ store.py             Saved connections in SQLite, secrets encrypted
 ssh_tunnel.py        SSH tunnels (port forwarding) to reach databases
 filesql.py           SQL over attached CSV/TSV/Excel files (DuckDB, read-only sandbox)
 templates/index.html The whole web UI (HTML, CSS and JS in one file)
+USER_GUIDE.md        Guide for everyday users; served in the app at /guide (Help link)
+CHANGELOG.md         What changed in each version
+version.py           The version number (single place to change it)
 requirements.txt
 .env.example
 .gitignore
@@ -371,6 +406,13 @@ All responses are JSON unless noted.
 
 - `POST /api/upload` — multipart field `file`; returns `{id, name, mime, size, kind, truncated, stats, tables}` (`kind` is `image`, `text` or `zip`; `tables` lists `{rows, columns, sheet}` for CSV/TSV/Excel files loaded as SQL tables), or `{error}` with status 400/413
 - `GET /files/<id>` — the original file
+- `GET /api/files` — every upload: `{files: [{id, name, kind, size, disk, uploaded, tables, stats}], total_disk}`; `disk` includes the table; unfinished uploads have `incomplete: true`
+- `DELETE /api/files/<id>` — delete one upload (404 if it's gone); `POST /api/files/delete` with `{ids}` deletes several → `{deleted, freed}` (bytes)
+
+**Help and version**
+
+- `GET /api/version` — `{name, version}`; `/api/config` also includes `version`
+- `GET /guide` — the user guide as a web page; `GET /guide.md` — its Markdown source
 
 **Databases**
 
@@ -386,8 +428,21 @@ All responses are JSON unless noted.
 - Run behind gunicorn with threaded workers so streaming isn't buffered, and a timeout long enough to load big Excel files: `gunicorn -k gthread --threads 8 --timeout 300 -b 127.0.0.1:5000 app:app` (gunicorn's default 30 s timeout would cut off a 200 MB workbook). Behind nginx, turn off proxy buffering for `/api/chat`, and raise the upload size and timeout for `/api/upload`: `client_max_body_size 210m; proxy_read_timeout 300s;` (nginx's default upload limit is 1 MB).
 - Add authentication in front of it before opening it beyond your own machine; see [Security](#security).
 - Keep `FLASK_DEBUG` unset or `0` (the default). Earlier versions always ran in debug mode, which exposed an in-browser debugger on errors and restarted the server whenever a `.zip` was uploaded.
-- Uploaded files are never deleted automatically. Clear `uploads/` when old chats no longer need their attachments; chats that refer to removed files show them as unavailable.
+- Uploaded files are never deleted automatically. Use the **Storage** panel (or delete chats with their files) to clean up; see [Removing files and freeing space](#removing-files-and-freeing-space). Deleting folders in `uploads/` by hand also works; chats that refer to them show the files as unavailable.
 - Chats are stored in each browser's local storage, not on the server. Clearing site data removes them; use **Export all chats** for backups. See [Saving, exporting and importing chats](#saving-exporting-and-importing-chats).
+
+## Versions and updating
+
+pgPeek uses `MAJOR.MINOR.PATCH` version numbers: PATCH for fixes, MINOR for new features, MAJOR for changes that break existing setups (settings, saved data or the API). The number lives in `version.py`, and [CHANGELOG.md](CHANGELOG.md) lists what each version changed.
+
+**Which version am I running?** It's at the bottom of the sidebar and on the Help page, printed when the server starts (` * pgPeek 1.0.0`), and returned by `/api/version`. Chat exports record the version that made them (`app_version` in JSON, the header line in HTML).
+
+**Updating**:
+
+1. Check [CHANGELOG.md](CHANGELOG.md) for anything marked as needing action.
+2. Stop pgPeek, then unzip the new `pgpeek-<version>.zip` over your `pgpeek` folder. Your `.env`, `connections.sqlite`, `secret.key`, `ssh_known_hosts` and `uploads/` aren't in the zip, so they're kept.
+3. Run `pip install -r requirements.txt` in case dependencies changed.
+4. Start pgPeek again, and reload the page in the browser. A running server keeps serving the old page until it's restarted.
 
 ## Upgrading from DB Helper or flask-chat
 

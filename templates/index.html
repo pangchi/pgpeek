@@ -211,6 +211,43 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 .edithint{flex:1;font-size:12px;color:var(--muted);min-width:180px;text-align:left}
 .edithint.err{color:var(--danger)}
 
+/* sent attachments: remove button */
+.att{position:relative;display:inline-block}
+.att .rm{position:absolute;top:-7px;right:-7px;width:22px;height:22px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:11px;line-height:1;cursor:pointer;opacity:0;transition:opacity .15s;display:grid;place-items:center;padding:0}
+.att:hover .rm,.att .rm:focus-visible{opacity:1}
+.att .rm:hover{color:var(--danger);border-color:var(--danger)}
+@media (hover:none){.att .rm{opacity:.85}}
+.removed{font-size:12px;color:var(--muted);margin:-2px 0 6px;max-width:85%;text-align:right}
+.removed s{opacity:.8}
+/* confirm dialog */
+#askDlg{width:min(460px,92vw)}
+#askBody{white-space:pre-line;font-size:14px;color:var(--ink);margin-top:4px}
+#askNote{margin-top:8px}
+.btn.primary.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.primary.danger:disabled{opacity:.4;cursor:default}
+/* storage */
+#storageDlg{width:min(860px,95vw);max-height:92vh}
+.stbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;font-size:14px}
+.stbar span{flex:1;color:var(--muted)}
+#stFilter{flex:none;width:auto;max-width:100%}
+#stList{border:1px solid var(--line);border-radius:8px;max-height:min(460px,60vh);overflow:auto}
+.strow{display:grid;grid-template-columns:28px minmax(0,1fr) 90px 110px minmax(0,1fr) 34px;gap:10px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:13px}
+.strow:last-child{border-bottom:0}
+.strow.head{position:sticky;top:0;background:var(--panel);color:var(--muted);font-size:12px;z-index:1}
+.strow .nm b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strow .nm small{color:var(--muted)}
+.strow .num{text-align:right;font-variant-numeric:tabular-nums}
+.strow .use{display:flex;flex-wrap:wrap;gap:4px}
+.strow .use button{background:var(--user);border:0;border-radius:6px;padding:2px 7px;font-size:12px;cursor:pointer;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strow .use em{color:var(--muted);font-style:normal}
+.strow .del{background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;border-radius:6px}
+.strow .del:hover{color:var(--danger);background:var(--bg)}
+.stempty{padding:18px;color:var(--muted);font-size:14px}
+#helpLink{display:block;padding:8px 10px;border-radius:6px;color:var(--side-ink);text-decoration:none;font-size:13px}
+#helpLink:hover{background:var(--side-hi);color:#fff}
+#appVersion{padding:6px 10px 0;font-size:11px;color:var(--side-ink);opacity:.6}
+@media (max-width:700px){.strow{grid-template-columns:24px minmax(0,1fr) 70px 30px}.strow .dt,.strow .use{display:none}}
+
 /* settings dialog */
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:20px;width:min(520px,92vw)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -241,7 +278,10 @@ dialog textarea{min-height:110px;resize:vertical}
     <button id="exportAll">Export all chats</button>
     <button id="importBtn">Import chats</button>
     <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <button id="openStorage">Storage</button>
     <button id="clearAll">Delete all chats</button>
+    <a id="helpLink" href="/guide" target="_blank" rel="noopener">Help</a>
+    <div id="appVersion" title="pgPeek version">pgPeek {{ version }}</div>
   </div>
 </aside>
 
@@ -352,6 +392,33 @@ dialog textarea{min-height:110px;resize:vertical}
   <div class="row"><button class="btn" id="kpCancel" type="button">Cancel</button></div>
 </dialog>
 <div id="drop">Drop files to attach</div>
+<dialog id="askDlg">
+  <h2 id="askTitle"></h2>
+  <div id="askBody"></div>
+  <label class="check" id="askCheckWrap" hidden><input type="checkbox" id="askCheck"> <span id="askCheckText"></span></label>
+  <div class="fieldnote" id="askNote" hidden></div>
+  <div class="row">
+    <button class="btn" id="askCancel" type="button">Cancel</button>
+    <button class="btn primary danger" id="askOk" type="button">Delete</button>
+  </div>
+</dialog>
+<dialog id="storageDlg">
+  <h2>Storage</h2>
+  <div class="stbar">
+    <span id="stSummary">Loading…</span>
+    <select id="stFilter" aria-label="Show">
+      <option value="all">All files</option>
+      <option value="unused">Not used by chats in this browser</option>
+    </select>
+  </div>
+  <div id="stList"></div>
+  <div class="fieldnote">"Used in" covers chats in this browser only. A file used from another browser or PC shows as unused here.</div>
+  <div class="row">
+    <button class="btn left danger" id="stDeleteUnused" type="button">Delete all unused</button>
+    <button class="btn" id="stClose" type="button">Close</button>
+    <button class="btn primary danger" id="stDeleteSel" type="button" disabled>Delete selected</button>
+  </div>
+</dialog>
 <dialog id="settings">
   <h2>Settings</h2>
   <label for="sysPrompt">System prompt</label>
@@ -368,6 +435,7 @@ dialog textarea{min-height:110px;resize:vertical}
 
 <script>
 const $ = s => document.querySelector(s);
+const APP_VERSION = {{ version|tojson }};
 const STORE = "pgpeek.v1";
 const OLD_STORES = ["dbhelper.v1", "flaskchat.v1"];   // earlier names (DB Helper, flask-chat); migrated once on first load
 try { if (!localStorage.getItem(STORE)) {
@@ -420,7 +488,7 @@ function decorate(el){
 }
 
 /* ---------- attachments ---------- */
-const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? (n/1024).toFixed(0) + " KB" : (n/1048576).toFixed(1) + " MB";
+const fmtSize = n => n < 1024 ? n + " B" : n < 1048576 ? (n/1024).toFixed(0) + " KB" : n < 1073741824 ? (n/1048576).toFixed(1) + " MB" : (n/1073741824).toFixed(2) + " GB";
 const extOf = n => (n.split(".").pop() || "file").slice(0,4).toUpperCase();
 function esc(t){ const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
 
@@ -486,7 +554,7 @@ function renderPending(){
   });
   updateSend();
 }
-function attachmentsEl(atts){
+function attachmentsEl(atts, onRemove){
   const w = document.createElement("div"); w.className = "msgatts";
   atts.forEach(a => {
     const link = document.createElement("a"); link.href = "/files/" + a.id; link.target = "_blank"; link.title = a.name;
@@ -496,7 +564,12 @@ function attachmentsEl(atts){
       link.appendChild(img);
     }
     else link.innerHTML = `<div class="chip"><div class="ficon">${esc(extOf(a.name))}</div><div class="meta"><b>${esc(a.name)}</b><small>${fmtSize(a.size)}${esc(tableNote(a))}${a.stats ? " · " + a.stats.files + " files" : ""}</small></div></div>`;
-    w.appendChild(link);
+    if (!onRemove) { w.appendChild(link); return; }
+    const box = document.createElement("span"); box.className = "att"; box.appendChild(link);
+    const rm = document.createElement("button"); rm.className = "rm"; rm.type = "button"; rm.textContent = "✕";
+    rm.title = "Remove from this chat"; rm.setAttribute("aria-label", `Remove ${a.name} from this chat`);
+    rm.onclick = e => { e.preventDefault(); e.stopPropagation(); onRemove(a); };
+    box.appendChild(rm); w.appendChild(box);
   });
   return w;
 }
@@ -512,10 +585,7 @@ function renderList(){
     d.onclick = () => { if (controller) return; state.current = c.id; save(); render(); };
     const [ren, del] = d.querySelectorAll("button");
     ren.onclick = e => { e.stopPropagation(); const t = prompt("Rename chat", c.title); if (t) { c.title = t.trim(); save(); render(); } };
-    del.onclick = e => { e.stopPropagation(); if (!confirm("Delete this chat?")) return;
-      state.chats = state.chats.filter(x => x.id !== c.id);
-      if (state.current === c.id) state.current = state.chats[0]?.id || null;
-      save(); render(); };
+    del.onclick = e => { e.stopPropagation(); deleteChats([c]); };
     list.appendChild(d);
   });
 }
@@ -576,7 +646,12 @@ function msgEl(m, i){
     wrap.appendChild(tools);
     return wrap;
   }
-  if (m.attachments?.length) wrap.appendChild(attachmentsEl(m.attachments));
+  if (m.attachments?.length) wrap.appendChild(attachmentsEl(m.attachments, m.role === "user" ? a => removeAttachment(cur(), a) : null));
+  if (m.removed?.length) {
+    const rmv = document.createElement("div"); rmv.className = "removed";
+    rmv.innerHTML = "Removed from chat: " + m.removed.map(n => `<s>${esc(n)}</s>`).join(", ");
+    wrap.appendChild(rmv);
+  }
   const b = document.createElement("div");
   b.className = "bubble" + (m.error ? " error" : "");
   if (m.role === "user") b.textContent = m.content; else { b.innerHTML = md(m.content); decorate(b); addRunButtons(b); }
@@ -658,7 +733,8 @@ async function send(text, atts){
         temperature: state.settings.temperature,
         dbs: chatDbs(c),
         system: state.settings.system,
-        messages: c.messages.slice(0, -1).filter(m => !m.error).map(({role, content, attachments}) => ({role, content, attachments}))
+        messages: c.messages.slice(0, -1).filter(m => !m.error).map(({role, content, attachments, removed}) => ({role, attachments,
+          content: removed?.length ? `${content}\n\n[The user removed ${removed.length > 1 ? "these attachments" : "this attachment"} from the chat; it is no longer available: ${removed.join(", ")}]`.trim() : content }))
       })
     });
     if (!res.ok) throw new Error(`Server returned ${res.status}`);
@@ -1088,8 +1164,165 @@ window.addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; $("#dr
 $("#send").onclick = submit;
 $("#newChat").onclick = newChat;
 $("#toggleSide").onclick = () => $("#sidebar").classList.toggle("hidden");
-$("#clearAll").onclick = () => { if (controller || !confirm("Delete all chats?")) return; state.chats = []; state.current = null; save(); render(); };
+$("#clearAll").onclick = () => { if (state.chats.length) deleteChats(state.chats.slice()); else notify("There are no chats to delete.", true); };
 $("#model").onchange = e => { state.model = e.target.value; save(); };
+
+/* ---------- files: remove, delete, storage ---------- */
+function ask({ title, body = "", ok = "Delete", check = null, note = "" }){
+  return new Promise(res => {
+    const d = $("#askDlg"); let done = false;
+    $("#askTitle").textContent = title; $("#askBody").textContent = body;
+    $("#askNote").textContent = note; $("#askNote").hidden = !note;
+    $("#askCheckWrap").hidden = !check;
+    if (check) { $("#askCheckText").textContent = check.label; $("#askCheck").checked = !!check.checked; $("#askCheck").disabled = !!check.disabled; }
+    $("#askOk").textContent = ok;
+    const finish = v => { if (done) return; done = true; if (d.open) d.close(); res(v); };
+    $("#askOk").onclick = () => finish({ ok: true, checked: !!check && !check.disabled && $("#askCheck").checked });
+    $("#askCancel").onclick = () => finish({ ok: false });
+    d.onclose = () => finish({ ok: false });   // Esc
+    d.showModal(); $("#askCancel").focus();
+  });
+}
+const usesFile = (c, id) => c.messages.some(m => (m.attachments || []).some(a => a.id === id));
+function chatFiles(c){   // unique attachments still in the chat
+  const seen = new Map();
+  c.messages.forEach(m => (m.attachments || []).forEach(a => { if (!seen.has(a.id)) seen.set(a.id, a); }));
+  return [...seen.values()];
+}
+let fileIndex = {};       // id -> server entry from /api/files
+async function loadFileIndex(){
+  const r = await api("/api/files");
+  if (!r.error) fileIndex = Object.fromEntries(r.files.map(f => [f.id, f]));
+  return r;
+}
+const diskOf = ids => ids.reduce((n, id) => n + (fileIndex[id]?.disk || 0), 0);
+function detach(c, id){   // take a file out of a chat, leaving a "removed" note for the model and the reader
+  let hit = false;
+  c.messages.forEach(m => {
+    const a = (m.attachments || []).find(x => x.id === id); if (!a) return;
+    m.attachments = m.attachments.filter(x => x.id !== id); if (!m.attachments.length) delete m.attachments;
+    (m.removed ||= []).push(a.name); hit = true;
+  });
+  return hit;
+}
+async function serverDelete(ids){   // delete uploads on the server and take them out of every chat in this browser
+  if (!ids.length) return { deleted: [], freed: 0 };
+  const r = await api("/api/files/delete", { method: "POST", body: JSON.stringify({ ids }) });
+  if (r.error) { notify("Couldn't delete files: " + r.error, true); return null; }
+  r.deleted.forEach(id => { state.chats.forEach(c => detach(c, id)); delete fileIndex[id]; });
+  save(); render();
+  return r;
+}
+async function removeAttachment(c, a){
+  if (!c) return;
+  if (controller) { notify("Wait for the reply to finish first.", true); return; }
+  await loadFileIndex();
+  const others = state.chats.filter(x => x !== c && usesFile(x, a.id));
+  const onServer = !!fileIndex[a.id];
+  const check = !onServer ? null : others.length ? { label: "Also delete it from the server", checked: false, disabled: true }
+    : { label: `Also delete it from the server (frees ${fmtSize(fileIndex[a.id].disk)})`, checked: true };
+  const note = others.length ? `It stays on the server because it's also used in “${others[0].title || "another chat"}”${others.length > 1 ? ` and ${others.length - 1} more` : ""}.` : "";
+  const r = await ask({ title: `Remove ${a.name}?`, ok: "Remove", check, note,
+    body: "The file is taken out of this chat: the model won't see it or query its table any more, and is told it was removed. Earlier answers stay as they are." });
+  if (!r.ok) return;
+  detach(c, a.id); save(); render();
+  if (r.checked) {
+    const d = await serverDelete([a.id]);
+    if (d) notify(`Removed ${a.name} and deleted it from the server (${fmtSize(d.freed)} freed).`);
+  } else notify(`Removed ${a.name} from this chat.`);
+}
+async function deleteChats(chats){
+  if (controller) { notify("Wait for the reply to finish first.", true); return; }
+  await loadFileIndex();
+  const keep = state.chats.filter(c => !chats.includes(c));
+  const ids = [...new Set(chats.flatMap(c => chatFiles(c).map(a => a.id)))].filter(id => fileIndex[id]);
+  const shared = ids.filter(id => keep.some(k => usesFile(k, id)));
+  const own = ids.filter(id => !shared.includes(id));
+  const one = chats.length === 1;
+  const check = own.length ? { checked: true,
+    label: `Also delete ${one ? "its" : "their"} ${own.length === 1 ? "uploaded file" : own.length + " uploaded files"} from the server (${fmtSize(diskOf(own))})` } : null;
+  const note = shared.length ? `${shared.length} file${shared.length > 1 ? "s are" : " is"} also used in other chats and will be kept.` : "";
+  const r = await ask({ check, note, ok: "Delete",
+    title: one ? `Delete “${chats[0].title || "New chat"}”?` : `Delete all ${chats.length} chats?`,
+    body: one ? "The chat is removed from this browser." : "All chats are removed from this browser. Use Export all chats first if you might need them." });
+  if (!r.ok) return;
+  state.chats = keep;
+  if (!keep.some(c => c.id === state.current)) state.current = keep[0]?.id || null;
+  save(); render();
+  const what = one ? "Chat deleted" : `${chats.length} chats deleted`;
+  if (r.checked) {
+    const d = await serverDelete(own);
+    if (d) notify(`${what}, with ${d.deleted.length} file${d.deleted.length === 1 ? "" : "s"} (${fmtSize(d.freed)} freed).`);
+  } else notify(what + ".");
+}
+
+/* Storage panel */
+const stDlg = $("#storageDlg");
+let stFiles = [], stSel = new Set();
+function openChat(id){ if (controller) return; state.current = id; save(); render(); stDlg.close(); }
+function renderStorage(){
+  const filter = $("#stFilter").value, list = $("#stList");
+  const rows = stFiles.map(f => ({ ...f, chats: state.chats.filter(c => usesFile(c, f.id)) }))
+                      .filter(f => filter === "all" || !f.chats.length);
+  stSel = new Set([...stSel].filter(id => stFiles.some(f => f.id === id)));
+  const total = stFiles.reduce((n, f) => n + f.disk, 0), unused = stFiles.filter(f => !state.chats.some(c => usesFile(c, f.id)));
+  $("#stSummary").textContent = `${stFiles.length} file${stFiles.length === 1 ? "" : "s"} · ${fmtSize(total)} on disk · ${unused.length} unused (${fmtSize(unused.reduce((n, f) => n + f.disk, 0))})`;
+  $("#stDeleteUnused").disabled = !unused.length;
+  $("#stDeleteSel").disabled = !stSel.size;
+  $("#stDeleteSel").textContent = stSel.size ? `Delete selected (${stSel.size})` : "Delete selected";
+  list.innerHTML = "";
+  if (!rows.length) { list.innerHTML = `<div class="stempty">${stFiles.length ? "No unused files." : "No uploaded files on the server."}</div>`; return; }
+  const head = document.createElement("div"); head.className = "strow head";
+  head.innerHTML = `<input type="checkbox" aria-label="Select all shown"><span>File</span><span class="num">On disk</span><span class="dt">Uploaded</span><span class="use">Used in</span><span></span>`;
+  const all = head.querySelector("input"); all.checked = rows.every(f => stSel.has(f.id));
+  all.onchange = () => { rows.forEach(f => all.checked ? stSel.add(f.id) : stSel.delete(f.id)); renderStorage(); };
+  list.appendChild(head);
+  rows.forEach(f => {
+    const r = document.createElement("div"); r.className = "strow";
+    const kind = f.incomplete ? "incomplete upload" : f.tables?.length ? tableNote(f).replace(/^ · /, "") : f.kind === "zip" ? `zip${f.stats ? ", " + f.stats.files + " files" : ""}` : f.kind;
+    r.innerHTML = `<input type="checkbox"><span class="nm"><b></b><small></small></span><span class="num"></span><span class="dt"></span><span class="use"></span><button class="del" title="Delete" aria-label="Delete">🗑</button>`;
+    const cb = r.querySelector("input"); cb.checked = stSel.has(f.id); cb.setAttribute("aria-label", "Select " + f.name);
+    cb.onchange = () => { cb.checked ? stSel.add(f.id) : stSel.delete(f.id); renderStorage(); };
+    r.querySelector("b").textContent = f.name; r.querySelector("b").title = f.name;
+    r.querySelector("small").textContent = `${kind} · ${fmtSize(f.size)} original`;
+    r.querySelector(".num").textContent = fmtSize(f.disk);
+    r.querySelector(".dt").textContent = new Date(f.uploaded * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    const use = r.querySelector(".use");
+    if (!f.chats.length) use.innerHTML = "<em>Not used here</em>";
+    f.chats.forEach(c => { const b = document.createElement("button"); b.textContent = c.title || "New chat"; b.title = "Open this chat"; b.onclick = () => openChat(c.id); use.appendChild(b); });
+    r.querySelector(".del").onclick = () => storageDelete([f.id]);
+    list.appendChild(r);
+  });
+}
+async function storageDelete(ids){
+  if (controller) { notify("Wait for the reply to finish first.", true); return; }
+  const files = stFiles.filter(f => ids.includes(f.id));
+  const used = files.filter(f => state.chats.some(c => usesFile(c, f.id)));
+  const size = files.reduce((n, f) => n + f.disk, 0);
+  const r = await ask({ ok: "Delete",
+    title: files.length === 1 ? `Delete ${files[0].name}?` : `Delete ${files.length} files?`,
+    body: `This frees ${fmtSize(size)} on the server and can't be undone.` +
+      (used.length ? `\n${used.length === 1 && files.length === 1 ? "It is" : used.length + " of them are"} used in chats here; ${used.length === 1 && files.length === 1 ? "it" : "they"}'ll be removed from those chats.` : "") });
+  if (!r.ok) return;
+  const d = await serverDelete(ids);
+  if (!d) return;
+  stSel = new Set([...stSel].filter(id => !d.deleted.includes(id)));
+  stFiles = stFiles.filter(f => !d.deleted.includes(f.id));
+  renderStorage();
+  notify(`Deleted ${d.deleted.length} file${d.deleted.length === 1 ? "" : "s"} (${fmtSize(d.freed)} freed).`);
+}
+async function openStorage(){
+  stSel = new Set(); $("#stList").innerHTML = `<div class="stempty">Loading…</div>`; $("#stSummary").textContent = "Loading…";
+  stDlg.showModal();
+  const r = await loadFileIndex();
+  if (r.error) { $("#stList").innerHTML = `<div class="stempty"></div>`; $("#stList .stempty").textContent = "Couldn't load files: " + r.error; return; }
+  stFiles = r.files; renderStorage();
+}
+$("#openStorage").onclick = openStorage;
+$("#stClose").onclick = () => stDlg.close();
+$("#stFilter").onchange = renderStorage;
+$("#stDeleteSel").onclick = () => storageDelete([...stSel]);
+$("#stDeleteUnused").onclick = () => storageDelete(stFiles.filter(f => !state.chats.some(c => usesFile(c, f.id))).map(f => f.id));
 
 /* ---------- export / import ---------- */
 const EXPORT_FORMAT = "pgpeek-chats";
@@ -1114,7 +1347,7 @@ function exportable(c){   // a chat plus the names of its databases, so imports 
   return { ...c, db_names: chatDbs(c).map(connName) };
 }
 function exportJSON(chats, filename){
-  const data = { format: EXPORT_FORMAT, version: 1, exported_at: new Date().toISOString(), chats: chats.map(exportable) };
+  const data = { format: EXPORT_FORMAT, version: 1, app_version: APP_VERSION, exported_at: new Date().toISOString(), chats: chats.map(exportable) };
   download(filename, JSON.stringify(data, null, 2), "application/json");
 }
 
@@ -1146,6 +1379,7 @@ function cleanChat(c){
     }
     if (m.kind === "sql" && Array.isArray(m.results)) { out.kind = "sql"; out.results = m.results.map(cleanResult); }
     if (m.error) out.error = true;
+    if (Array.isArray(m.removed) && m.removed.length) out.removed = m.removed.slice(0, 50).map(n => String(n).slice(0, 200));
     if (+m.parts > 1) out.parts = +m.parts;
     messages.push(out);
   }
@@ -1172,7 +1406,8 @@ async function importChats(file){
     if (!c) { bad++; continue; }
     const existing = state.chats.find(x => x.id === c.id);
     if (existing) {
-      if (JSON.stringify(existing.messages) === JSON.stringify(c.messages)) { same++; continue; }
+      // compare after the same clean-up, so field order or dropped extras don't make identical chats look different
+      if (JSON.stringify(cleanChat(existing)?.messages) === JSON.stringify(c.messages)) { same++; continue; }
       c.id = uid(); c.title += " (imported)";
     }
     incoming.push(c); added++;
@@ -1263,7 +1498,8 @@ async function chatHTML(c){
     }
     const body = m.role === "user" ? (m.content ? `<div class="bubble">${esc(m.content)}</div>` : "")
                                    : `<div class="bubble${m.error ? " error" : ""}">${md(m.content)}</div>`;
-    const note = m.parts > 1 ? `<div class="note">Read in ${m.parts} parts</div>` : "";
+    const note = (m.parts > 1 ? `<div class="note">Read in ${m.parts} parts</div>` : "") +
+      (m.removed?.length ? `<div class="note">Removed from chat: ${esc(m.removed.join(", "))}</div>` : "");
     parts.push(`<section class="msg ${m.role}"><div class="who">${m.role === "user" ? "You" : "Assistant"}</div>${atts}${body}${note}</section>`);
   }
   const dbs = chatDbs(c).map(connName);
@@ -1272,7 +1508,7 @@ async function chatHTML(c){
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(c.title || "Chat")} – pgPeek</title><style>${EXPORT_CSS}</style></head>
 <body><main><header><h1>${esc(c.title || "Chat")}</h1>
-<div class="meta">Exported from pgPeek on ${esc(when)}${dbs.length ? ` · Database${dbs.length > 1 ? "s" : ""}: ${esc(dbs.join(", "))}` : ""}</div></header>
+<div class="meta">Exported from pgPeek ${esc(APP_VERSION)} on ${esc(when)}${dbs.length ? ` · Database${dbs.length > 1 ? "s" : ""}: ${esc(dbs.join(", "))}` : ""}</div></header>
 ${parts.join("\n")}
 <footer>${plural(c.messages.filter(m => m.kind !== "sql").length, "message")} · ${plural(c.messages.filter(m => m.kind === "sql").length, "query result")}</footer>
 </main></body></html>`;

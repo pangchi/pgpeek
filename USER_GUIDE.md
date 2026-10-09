@@ -1,0 +1,215 @@
+# pgPeek user guide
+
+pgPeek lets you ask questions about your company's data in plain English. It works with databases your administrator has connected and with CSV and Excel files you attach yourself. You type a question, the AI writes a database query, pgPeek runs it, and the AI answers from the real numbers.
+
+This guide covers everyday use. For installation and settings, see the README.
+
+## Contents
+
+- [The screen at a glance](#the-screen-at-a-glance)
+- [Asking questions](#asking-questions)
+- [Getting answers from data](#getting-answers-from-data)
+- [Attaching files](#attaching-files)
+- [Asking about CSV and Excel files](#asking-about-csv-and-excel-files)
+- [Removing files and freeing space](#removing-files-and-freeing-space)
+- [Saving, exporting and importing chats](#saving-exporting-and-importing-chats)
+- [Database connections](#database-connections)
+- [Settings](#settings)
+- [Tips for better answers](#tips-for-better-answers)
+- [What stays private](#what-stays-private)
+- [Common questions](#common-questions)
+
+## The screen at a glance
+
+**Left sidebar**
+
+| Item | What it does |
+|---|---|
+| **New chat** | Starts a fresh conversation. |
+| Chat list | Your chats, newest first. Click one to open it; ✎ renames it, ✕ deletes it. |
+| **Settings** | System prompt, temperature, and automatic running of queries. |
+| **Database** | Add or edit database connections. |
+| **Export all chats** / **Import chats** | Back up your chats to a file, or load them back. |
+| **Storage** | See every uploaded file and delete the ones you no longer need. |
+| **Delete all chats** | Clears your chat list, optionally with the files in it. |
+| **Help** | Opens this guide. |
+| Version | The pgPeek version, shown at the very bottom (for example *pgPeek 1.0.0*). Mention it when reporting a problem. |
+
+The panel button at the top left of the main area hides or shows the sidebar.
+
+**Top bar**
+
+- **Model**: which AI model answers. Your administrator decides which ones are available.
+- **Database chip**: which data sources this chat can use. It shows a database name, *2 databases*, *Files*, or *Database off*. A blue dot means the source is connected; red means there's a problem.
+- **Download icon** (right): export the current chat.
+
+**Message box** (bottom)
+
+- **Enter** sends; **Shift+Enter** starts a new line.
+- The 📎 button attaches files. You can also drag files onto the window or paste images.
+- While an answer is being written, the send button becomes a **■ stop** button.
+
+## Asking questions
+
+Type your question and press Enter. The answer appears word by word.
+
+Under each message:
+
+- **Copy** copies the text.
+- **Edit** (your messages) opens the message for editing. Change it, then press **Ctrl+Enter** (⌘+Enter on a Mac) or **Save & send**. Press **Esc** to cancel. Saving replaces that message and everything after it; the editor tells you how many messages that is.
+- **Regenerate** (the last answer) asks for a fresh answer to the same question.
+
+Each chat remembers everything said in it, so follow-up questions like *"now split that by month"* work. Start a new chat when you change topic: answers are faster and more focused.
+
+## Getting answers from data
+
+When a chat has a database or data file, the AI answers data questions by writing a query, shown in a dark code box.
+
+1. Press **Run** on the query, or turn on **Settings → Run the model's SQL queries automatically** to skip this step.
+2. The result appears as a table card.
+3. The AI reads the result and answers your question. If the query had an error, it fixes it and tries again.
+
+On a result card:
+
+- **SQL** (click to expand) shows the exact query.
+- **Copy CSV** copies the result for pasting into Excel.
+- **Run again** re-runs the query, for example after the data has changed.
+
+Queries can only **read** data. pgPeek blocks anything that would change or delete it, so you can't damage the data by asking a question.
+
+**Choosing data sources**: click the database chip and tick the databases this chat may use. New chats start with your last choice. To check what the AI can see, ask *"What tables do you have access to?"*
+
+At most 200 rows come back from one query, so ask for summaries (totals, averages, top 10, counts by month) rather than *"show me every order"*.
+
+## Attaching files
+
+Click 📎, drag files anywhere onto the window, or paste an image. You can attach several at once. Each file shows as a chip above the message box:
+
+- *Uploading 45%* while it uploads.
+- *Loading table…* while a CSV or Excel file is turned into a table.
+- Then its size, plus *table, 2,500 rows* for CSV and Excel files.
+
+The **Send** button waits until all uploads finish. Click a chip's **✕** to remove it before sending (this also cancels an upload in progress).
+
+| You can attach | Up to | The AI gets |
+|---|---|---|
+| CSV, TSV, Excel (.xlsx) | 200 MB each | A table it can query, plus a short preview |
+| PDF, Word, text, code, JSON | 20 MB each | The text of the file |
+| Images (JPG, PNG, GIF, WebP, BMP) | 20 MB each | The picture (if the model supports images) |
+| Zip files | 20 MB | Every supported file inside |
+
+Very long documents are trimmed, and very large requests are read in parts automatically. You'll see *Reading part 2 of 5…* while that happens.
+
+## Asking about CSV and Excel files
+
+CSV and Excel files become tables the AI can query, so totals and counts are **exact**, calculated over every row rather than estimated.
+
+1. Attach the file and wait for *table, N rows* on its chip.
+2. Ask your question, for example: *"Total quantity by board for each month"* or *"Which 10 stations had the most failures?"*
+3. Press **Run** on the query (or use auto-run). The answer comes from the result.
+
+Good to know:
+
+- Each file, and each Excel sheet, becomes one table, named after the file: `march_orders.csv` becomes `march_orders`, and sheet *Defects* of `qa.xlsx` becomes `qa_defects`.
+- Column names become lower case with underscores: *Unit Price ($)* becomes `unit_price`.
+- The first row should hold the column names.
+- Files stay available for the whole chat. Attach April's file later and ask *"compare with March"*.
+- If a chat also has a database, the AI can use both, querying each separately and combining the results.
+- A 200 MB CSV loads in about 10 seconds. Big Excel files take longer (about a minute for 4 million rows), so for very large data, save it as CSV first.
+- Tell the AI what columns mean if it isn't obvious, for example *"status D means done; times are UTC"*.
+
+## Removing files and freeing space
+
+Uploaded files are stored on the pgPeek server until someone deletes them, and a big CSV can take 200 MB or more. There are three ways to clean up.
+
+**Remove a file from a chat.** Hover over a file in a message you've sent and click its **✕**. You'll be asked to confirm:
+
+- The file leaves the chat: the AI no longer sees it or can query its table, and is told it was removed. The message shows *Removed from chat: file name*.
+- **Also delete it from the server** is ticked if no other chat uses the file. If another chat still uses it, the box is greyed out and the file is kept.
+- Earlier answers stay as they were.
+
+**Delete a chat.** Click **✕** next to the chat in the sidebar (or **Delete all chats**). The confirmation offers to **also delete its uploaded files** and shows how much space that frees. Files that another chat still uses are kept. Untick the box to keep the files.
+
+**Storage panel.** Click **Storage** in the sidebar to see every file on the server:
+
+- Its name and type, size on disk (including its table), upload date, and **Used in**: the chats that use it. Click a chat name to open that chat.
+- The top line shows the total space used and how much is taken by unused files.
+- **Not used by chats in this browser** in the dropdown shows only the files you can probably delete.
+- 🗑 deletes one file; tick several and use **Delete selected**; or **Delete all unused** in one go.
+
+Deleting a file that chats still use removes it from those chats too. Deleting can't be undone.
+
+> **Shared server?** "Used in" only knows about chats in *your* browser. If colleagues use the same pgPeek, a file marked *Not used here* may be in their chats. Check before using **Delete all unused**.
+
+## Saving, exporting and importing chats
+
+Chats are saved automatically in your browser. Close pgPeek, come back tomorrow, click the chat and carry on.
+
+They're tied to **this browser on this computer, at this exact address**. Opening pgPeek at a different address (for example `localhost` instead of `127.0.0.1`), in a private window, or after clearing browsing data shows an empty list. Export regularly to keep a copy.
+
+**Export** (download icon, top right, for the current chat):
+
+- **Download as HTML**: a page anyone can open in a browser without pgPeek. It includes the answers, result tables and attached images, and is good for sharing or printing.
+- **Download as JSON**: a backup you can import later.
+
+**Export all chats** (sidebar) saves every chat to one JSON file.
+
+**Import chats** (sidebar) loads a JSON export. Chats you already have are skipped, so nothing is overwritten. Databases reconnect by name. Attached files only work if they're still on the pgPeek server.
+
+## Database connections
+
+Usually your administrator sets these up. To add one yourself: **Database → + New connection**, fill in the details, and press **Test & save**.
+
+- **Name** is how you and the AI refer to it.
+- **Notes for the model** are the most useful field. Explain what the data means: status codes, units, time zone, how your metrics are calculated, rows to ignore. For example:
+  ```
+  jobs.status: Q = queued, R = running, D = done
+  Yield = passed / total
+  Times are UTC; the workshop is in Singapore (UTC+8)
+  ```
+- **Connect through SSH** is for databases behind a server. **Browse…** helps pick a key file.
+- Passwords are stored encrypted and never shown again; leave them blank when editing to keep them.
+
+## Settings
+
+| Setting | What it does |
+|---|---|
+| System prompt | Standing instructions for every chat, such as *"Answer briefly. Use Singapore dates."* |
+| Temperature | 0 gives focused, repeatable answers; higher values give more varied wording. 0.2–0.7 suits data questions. |
+| Run SQL automatically | Runs the AI's queries without pressing **Run**. It stops after 5 queries in a row so a confused AI can't loop. |
+
+## Tips for better answers
+
+- **Be specific**: *"Units shipped per board in Q3 2026, by month"* beats *"how are sales"*.
+- **Say what you want back**: *"as a table"*, *"top 5 only"*, *"one sentence"*.
+- **Explain your terms** once per chat: what *yield*, *late* or *active* means to you.
+- **Check the SQL** (expand it on the result card) when a number looks surprising. The AI may have picked the wrong column or filter. Tell it, and it will fix the query.
+- **One topic per chat** keeps answers fast and accurate.
+
+## What stays private
+
+- **On the pgPeek server**: your uploaded files, database passwords (encrypted), and the full results of every query.
+- **Sent to the AI model**: your messages, attached file text or previews, table and column names with a few sample rows, and query results (at most 200 rows each).
+- **In your browser**: your chats.
+
+Only attach files and connect data you're allowed to send to the AI provider your organisation uses.
+
+## Common questions
+
+**My chats disappeared.** You're probably at a different address, in a private window, or browsing data was cleared. Try the address you used before, or import your last export.
+
+**A CSV shows only its size, not "table, N rows".** It couldn't be read as a table. Check that it's a real CSV with a header row; if it is, ask your administrator to check that DuckDB is installed.
+
+**"Over the 200 MB limit".** Split the file, or ask your administrator to raise the limit.
+
+**The answer says it can't access the database.** Click the database chip and tick the database for this chat.
+
+**The chip is red.** The database can't be reached right now. Hover over it for the reason, or ask your administrator.
+
+**The AI's number looks wrong.** Expand **SQL** on the result card to see what it calculated, then tell it what to change, such as *"exclude test boards"* or *"use order_date, not ship_date"*.
+
+**A file shows "(unavailable)".** It was deleted from the server, or the chat was imported from another pgPeek. Attach the file again.
+
+**Where did a file I removed go?** If you ticked *Also delete it from the server*, it's gone. Otherwise it's still in **Storage**, where you can delete it later.
+
+**Which version of pgPeek is this?** It's shown at the bottom of the sidebar and at the end of this guide. The README's changelog lists what changed in each version.

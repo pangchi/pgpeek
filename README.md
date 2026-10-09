@@ -1,6 +1,6 @@
 # pgPeek
 
-**Version 1.1.0** · [Changelog](CHANGELOG.md)
+**Version 1.1.1** · [Changelog](CHANGELOG.md)
 
 Ask questions about your PostgreSQL databases in plain language. pgPeek is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
@@ -37,7 +37,7 @@ Requires Python 3.9 or newer.
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env        # set OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL
+cp env.example .env        # set OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL
 python app.py
 ```
 
@@ -294,7 +294,7 @@ The export icon is greyed out until the current chat has messages, and exporting
 
 ## Configuration
 
-Settings go in `.env` (see `.env.example`). Restart `python app.py` after changing them.
+Settings go in `.env` (see `env.example`). Restart `python app.py` after changing them.
 
 **Model**
 
@@ -393,9 +393,11 @@ USER_GUIDE.md        Guide for everyday users; served in the app at /guide (Help
 CHANGELOG.md         What changed in each version
 version.py           The version number (single place to change it)
 requirements.txt
-.env.example
-.gitignore
+env.example          Settings template: copy it to .env and fill it in
+.gitignore           Keeps .env, keys, the connection store and uploads out of git
 ```
+
+`.gitignore` starts with a dot, so macOS and Linux hide it and it can be left out when you upload or copy the folder (for example dragging it into GitHub's *Upload files* page). Push with git (`git add .` then `git status` should list `.gitignore` and must not list `.env`), or add `.gitignore` on GitHub by hand.
 
 Created when the app runs: `connections.sqlite` and `secret.key` (on first saved connection), `ssh_known_hosts` (on first SSH connection) and `uploads/` (on first upload).
 

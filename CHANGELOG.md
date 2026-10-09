@@ -8,6 +8,14 @@ All notable changes to pgPeek. Versions follow `MAJOR.MINOR.PATCH`:
 
 The version is set in `version.py`. It's shown at the bottom of the sidebar and on the Help page, returned by `/api/version`, and recorded in chat exports.
 
+## 1.1.1 — 2026-10-09
+
+### Changed
+- **`.env.example` is now `env.example`.** Files starting with a dot are hidden on macOS and Linux and can be left out when uploading or copying a folder, so the settings template could go missing from repositories. Setup is now `cp env.example .env`. Existing `.env` files are unaffected.
+
+### Docs
+- README notes that `.gitignore` is also a hidden file and how to check it reaches GitHub.
+
 ## 1.1.0 — 2026-10-09
 
 ### Added

@@ -8,3 +8,5 @@ Pillow>=10.0       # optional: converts .bmp to .png
 psycopg[binary]>=3.1  # optional: PostgreSQL queries
 paramiko>=3.4        # optional: PostgreSQL over SSH
 cryptography>=42      # required for saved connections (encrypts passwords)
+duckdb>=1.1          # optional: SQL over attached CSV/TSV/Excel files
+python-calamine>=0.2  # optional: ~10x faster Excel loading for SQL tables

@@ -8,6 +8,7 @@ Configure with environment variables (or a .env file):
     SYSTEM_PROMPT    - optional default system prompt
     UPLOAD_DIR       - where uploaded files are stored (default ./uploads)
     MAX_UPLOAD_MB    - per-file upload limit (default 20)
+    MAX_TABLE_UPLOAD_MB - per-file limit for CSV/TSV/Excel loaded as SQL tables (default 200)
     MAX_TEXT_CHARS   - max characters of text sent per file or zip (default 400000, ~100k tokens)
     MAX_SEND_CHARS   - max characters per request; larger sends are split into parts (default 100000)
     PART_NOTE_TOKENS - max tokens for the notes taken from each part (default 2000)
@@ -32,6 +33,7 @@ import posixpath
 import openai
 
 import db
+import filesql
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context
 from werkzeug.utils import secure_filename
 
@@ -48,6 +50,8 @@ SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", "You are a helpful assistant.")
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"))
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", 20))
+# CSV/TSV/Excel go into DuckDB rather than the model's context, so they can be much larger.
+MAX_TABLE_UPLOAD_MB = int(os.getenv("MAX_TABLE_UPLOAD_MB", 200)) if filesql.available() else MAX_UPLOAD_MB
 MAX_TEXT_CHARS = int(os.getenv("MAX_TEXT_CHARS", 400_000))   # ~100k tokens
 MAX_SEND_CHARS = int(os.getenv("MAX_SEND_CHARS", 100_000))      # per request to the API
 PART_NOTE_TOKENS = int(os.getenv("PART_NOTE_TOKENS", 2000))     # max reply length for each part's notes
@@ -57,7 +61,7 @@ ZIP_MAX_IMAGES = int(os.getenv("ZIP_MAX_IMAGES", 10))
 
 client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL)
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = max(MAX_UPLOAD_MB, MAX_TABLE_UPLOAD_MB) * 1024 * 1024 + 64 * 1024  # + form overhead
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Allowed types, per the model's stated support: images, documents, data files and code.
@@ -120,13 +124,17 @@ def extract_text(path, name, mime):
                     w.writerow(["" if v is None else v for v in row])
             out.append(f"[Sheet: {ws.title}]\n{buf.getvalue()}")
         return "\n".join(out)
-    raw = open(path, "rb").read()
+    with open(path, "rb") as fh:  # only what can be kept: MAX_TEXT_CHARS characters, up to 4 bytes each
+        raw = fh.read((MAX_TEXT_CHARS + 1) * 4)
     if b"\x00" in raw[:4096]:
         raise ValueError("This looks like a binary file, not text.")
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        return raw.decode("latin-1")
+    cut = os.path.getsize(path) > len(raw)
+    for trim in (0, 1, 2, 3) if cut else (0,):  # a cut can split a UTF-8 character
+        try:
+            return raw[:len(raw) - trim].decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1")
 
 
 def load_meta(fid):
@@ -249,7 +257,13 @@ def process_zip(zpath, folder):
 
 @app.errorhandler(413)
 def too_large(_):
-    return jsonify(error=f"File is larger than the {MAX_UPLOAD_MB} MB limit."), 413
+    return jsonify(error=f"File is larger than the upload limit ({limit_text()})."), 413
+
+
+def limit_text():
+    if MAX_TABLE_UPLOAD_MB > MAX_UPLOAD_MB:
+        return f"{MAX_UPLOAD_MB} MB, or {MAX_TABLE_UPLOAD_MB} MB for CSV, TSV and Excel"
+    return f"{MAX_UPLOAD_MB} MB"
 
 
 @app.post("/api/upload")
@@ -270,6 +284,11 @@ def upload():
         mimetypes.guess_type(name)[0] or "application/octet-stream")
     meta = {"id": fid, "name": f.filename, "file": name, "mime": mime,
             "size": os.path.getsize(path), "kind": "image", "truncated": False}
+    tabular = filesql.available() and filesql.is_tabular(name)
+    limit_mb = MAX_TABLE_UPLOAD_MB if tabular else MAX_UPLOAD_MB
+    if meta["size"] > limit_mb * 1024 * 1024:
+        shutil.rmtree(folder, ignore_errors=True)
+        return jsonify(error=f"File is larger than the {limit_mb} MB limit for this type ({limit_text()})."), 413
 
     if ext in ARCHIVE_EXTS:
         try:
@@ -298,11 +317,27 @@ def upload():
                 shutil.rmtree(folder, ignore_errors=True)
                 return jsonify(error="This BMP image couldn't be read."), 400
     else:
-        try:
-            text = extract_text(path, name, mime)
-        except Exception as e:
-            shutil.rmtree(folder, ignore_errors=True)
-            return jsonify(error=str(e)), 400
+        tables = []
+        if tabular:
+            try:
+                tables = filesql.prepare(path, name, folder)
+            except Exception:
+                tables = []  # not loadable as a table: fall back to text below
+        if tables:
+            # The model gets a preview plus SQL access, so only the first lines are kept as text.
+            text = filesql.head_text(folder, tables)
+            filesql.cleanup(folder)
+            meta["tables"] = tables
+        else:
+            if meta["size"] > MAX_UPLOAD_MB * 1024 * 1024:
+                shutil.rmtree(folder, ignore_errors=True)
+                return jsonify(error=f"This file couldn't be read as a table, and other files are limited to "
+                                     f"{MAX_UPLOAD_MB} MB. Check it's a valid CSV/TSV/Excel file."), 400
+            try:
+                text = extract_text(path, name, mime)
+            except Exception as e:
+                shutil.rmtree(folder, ignore_errors=True)
+                return jsonify(error=str(e)), 400
         if not text.strip():
             shutil.rmtree(folder, ignore_errors=True)
             return jsonify(error="No readable text found in this file (scanned PDFs need OCR)."), 400
@@ -314,7 +349,10 @@ def upload():
 
     with open(os.path.join(folder, "meta.json"), "w") as fh:
         json.dump(meta, fh)
-    return jsonify({k: meta[k] for k in ("id", "name", "mime", "size", "kind", "truncated", "stats") if k in meta})
+    out = {k: meta[k] for k in ("id", "name", "mime", "size", "kind", "truncated", "stats") if k in meta}
+    if meta.get("tables"):
+        out["tables"] = [{"rows": t["rows"], "columns": len(t["columns"]), "sheet": t["sheet"]} for t in meta["tables"]]
+    return jsonify(out)
 
 
 @app.get("/files/<fid>")
@@ -326,8 +364,31 @@ def get_file(fid):
                                download_name=meta["name"])
 
 
-def collect_attachments(msg):
-    """Return (docs, images) for a message: docs = [(label, text)], images = [data URLs]."""
+def chat_file_ids(raw):
+    """Ids of tabular (CSV/TSV/Excel) attachments in a chat, in message order."""
+    ids = []
+    for m in raw:
+        if m.get("role") != "user":
+            continue
+        for a in m.get("attachments") or []:
+            fid = a.get("id") if isinstance(a, dict) else a
+            if isinstance(fid, str) and fid not in ids:
+                ids.append(fid)
+    return ids
+
+
+def file_tables(ids):
+    """Chat-level file tables (empty if DuckDB isn't installed)."""
+    if not filesql.available():
+        return []
+    return filesql.chat_tables([i for i in ids if isinstance(i, str)], load_meta, UPLOAD_DIR)
+
+
+def collect_attachments(msg, ftables=None):
+    """Return (docs, images) for a message: docs = [(label, text)], images = [data URLs].
+
+    ftables maps file id -> its SQL tables; those files are sent as a short preview, not in full.
+    """
     docs, images = [], []
     for a in msg.get("attachments") or []:
         fid = a.get("id") if isinstance(a, dict) else a
@@ -348,6 +409,9 @@ def collect_attachments(msg):
             for im in meta.get("images", []):
                 with open(os.path.join(folder, im["file"]), "rb") as fh:
                     images.append(f"data:{im['mime']};base64,{base64.b64encode(fh.read()).decode()}")
+        elif ftables and ftables.get(fid):
+            label = meta["name"] + " (preview)"
+            body = filesql.preview(body, ftables[fid])
         else:
             label = meta["name"] + (" (truncated)" if meta.get("truncated") else "")
         docs.append((label, body))
@@ -358,12 +422,12 @@ def fmt_doc(label, body):
     return f"--- File: {label} ---\n{body}\n--- End of {label} ---"
 
 
-def build_content(msg):
+def build_content(msg, ftables=None):
     """Turn a stored message plus attachment ids into OpenAI message content."""
     text = msg.get("content") or ""
     if msg.get("role") != "user" or not msg.get("attachments"):
         return text
-    docs, images = collect_attachments(msg)
+    docs, images = collect_attachments(msg, ftables)
     text = "\n\n".join([text] + [fmt_doc(l, b) for l, b in docs]).strip()
     return with_images(text, images)
 
@@ -458,7 +522,8 @@ def index():
 @app.get("/api/config")
 def config():
     return jsonify(default_model=DEFAULT_MODEL, system_prompt=SYSTEM_PROMPT, base_url=BASE_URL,
-                   max_upload_mb=MAX_UPLOAD_MB, max_send_chars=MAX_SEND_CHARS, allowed_extensions=sorted(ALLOWED_EXTS),
+                   max_upload_mb=MAX_UPLOAD_MB, max_table_upload_mb=MAX_TABLE_UPLOAD_MB,
+                   table_extensions=sorted(filesql.TABLE_EXTS) if filesql.available() else [], max_send_chars=MAX_SEND_CHARS, allowed_extensions=sorted(ALLOWED_EXTS),
                    special_names=sorted(SPECIAL_NAMES))
 
 
@@ -491,7 +556,7 @@ def complete(model, messages, temperature):
     return (r.choices[0].message.content or "").strip()
 
 
-def split_send(model, raw, system, temperature):
+def split_send(model, raw, system, temperature, ftables=None):
     """Answer a request that exceeds MAX_SEND_CHARS by reading the files in parts.
 
     Each part is a separate request under the limit; notes from all parts are then
@@ -501,7 +566,7 @@ def split_send(model, raw, system, temperature):
     docs, images = [], []
     for m in raw:
         if m.get("role") == "user":
-            d, i = collect_attachments(m)
+            d, i = collect_attachments(m, ftables)
             docs += d
             images += i
     conv = [{"role": m.get("role", "user"), "content": m.get("content") or ""} for m in raw]
@@ -633,7 +698,12 @@ def db_query():
     data = request.get_json(force=True) or {}
     sql, cids = data.get("sql", ""), data.get("dbs") or []
     try:
-        res = db.run_query(sql, cids)
+        tables = file_tables(data.get("files") or [])
+        target = db.resolve_target(sql, cids, has_files=bool(tables))
+        if target == db.FILES_SOURCE:
+            res = filesql.run_query(sql, tables, db.DB_MAX_ROWS, db.DB_TIMEOUT_MS)
+        else:
+            res = db.run_query(sql, cids, target)
         return jsonify(sql=sql, text=db.result_text(sql, res, db_name=res["db_name"]), **res)
     except Exception as e:
         err = str(e).strip()
@@ -653,14 +723,18 @@ def chat():
     system = (data.get("system") or "").strip()
 
     dbs = [d for d in (data.get("dbs") or []) if isinstance(d, str)]
-    if dbs:
+    tables = file_tables(chat_file_ids(raw))
+    ftables = {}
+    for t in tables:
+        ftables.setdefault(t["fid"], []).append(t)
+    if dbs or tables:
         try:
-            system = (system + "\n\n" + db.system_prompt(dbs)).strip()
+            system = (system + "\n\n" + db.system_prompt(dbs, filesql.prompt_section(tables) if tables else None)).strip()
         except Exception as e:
             system = (system + f"\n\n(Databases are enabled for this chat but unavailable: {e}. "
                       "Tell the user if they ask for data.)").strip()
 
-    messages = [{"role": m.get("role", "user"), "content": build_content(m)} for m in raw]
+    messages = [{"role": m.get("role", "user"), "content": build_content(m, ftables)} for m in raw]
     if system:
         messages = [{"role": "system", "content": system}] + messages
 
@@ -669,7 +743,7 @@ def chat():
             if char_len(messages) <= MAX_SEND_CHARS:
                 yield from stream_completion(model, messages, temperature)
             else:
-                yield from split_send(model, raw, system, temperature)
+                yield from split_send(model, raw, system, temperature, ftables)
             yield ndjson({"done": True})
         except Exception as e:
             yield ndjson({"error": f"{type(e).__name__}: {e}"})
@@ -682,4 +756,10 @@ def chat():
 
 
 if __name__ == "__main__":
-    app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 5000)), debug=True, threaded=True)
+    # Debug mode is off by default: its in-browser debugger can run code, and its auto-reloader would
+    # restart the server whenever a .zip lands in uploads/. FLASK_DEBUG=1 turns it on for development.
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 5000)), debug=debug, threaded=True,
+            # watchdog matches patterns per path segment, so list each depth under uploads/
+            exclude_patterns=[os.path.join(UPLOAD_DIR, *["*"] * n) for n in (1, 2, 3)] + ["*.sqlite", "*.duckdb"]
+            if debug else None)

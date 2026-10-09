@@ -45,6 +45,7 @@ _lock = threading.Lock()
 _schema_cache = {}   # cid -> {"at", "fp", "text", "tables"}
 
 ENV_ID = "env"
+FILES_SOURCE = "files"   # reserved source name for attached CSV/Excel files (see filesql.py)
 _env_dsn = os.getenv("DATABASE_URL", "").strip()
 
 
@@ -197,6 +198,8 @@ def save(fields, cid=None, force=False):
         raise ValueError("Give the connection a name.")
     if not re.fullmatch(r"[\w .\-]{1,60}", name):
         raise ValueError("Use letters, numbers, spaces, dots, dashes or underscores in the name (max 60).")
+    if name.lower() == FILES_SOURCE:
+        raise ValueError(f"The name {FILES_SOURCE} is reserved for files attached to a chat. Choose another name.")
     if cid == ENV_ID:
         raise ValueError("The DATABASE_URL connection is set in .env and can't be edited here.")
     old = store.get(cid) if cid else None
@@ -351,36 +354,39 @@ def _cell(v):
     return str(v)[:2000]
 
 
-def resolve_target(sql, cids):
-    """Pick which of the chat's connections a query is for, using a '-- db: name' line if present."""
-    cids = [c for c in cids if c]
-    if not cids:
-        raise ValueError("No database is turned on for this chat.")
+def resolve_target(sql, cids, has_files=False):
+    """Pick which of the chat's sources a query is for, using a '-- db: name' line if present.
+
+    Returns a connection config, or FILES_SOURCE for the chat's attached CSV/Excel files.
+    """
     configs = []
-    for cid in cids:
+    for cid in [c for c in cids if c]:
         try:
             configs.append(config(cid))
         except KeyError:
             pass
-    if not configs:
-        raise ValueError("The databases selected for this chat no longer exist. Pick one again.")
+    names = [c["name"] for c in configs] + ([FILES_SOURCE] if has_files else [])
+    if not names:
+        raise ValueError("No database is turned on for this chat, and it has no CSV or Excel files to query." if not cids
+                         else "The databases selected for this chat no longer exist. Pick one again.")
     m = DB_TAG_RE.search(sql)
     if m:
         want = m.group(1).strip().strip("`'\"").lower()
+        if has_files and want == FILES_SOURCE:
+            return FILES_SOURCE
         for c in configs:
             if want in (c["name"].lower(), c["id"].lower()):
                 return c
-        raise ValueError(f"No database named '{m.group(1).strip()}' in this chat. "
-                         f"Use one of: {', '.join(c['name'] for c in configs)}.")
-    if len(configs) == 1:
-        return configs[0]
-    raise ValueError("This chat has several databases. Add '-- db: <name>' as the first line of the query, "
-                     f"using one of: {', '.join(c['name'] for c in configs)}.")
+        raise ValueError(f"No database named '{m.group(1).strip()}' in this chat. Use one of: {', '.join(names)}.")
+    if len(names) == 1:
+        return configs[0] if configs else FILES_SOURCE
+    raise ValueError("This chat has several data sources. Add '-- db: <name>' as the first line of the query, "
+                     f"using one of: {', '.join(names)}.")
 
 
-def run_query(sql, cids):
+def run_query(sql, cids, c=None):
     """Run one read-only query on the right connection. Returns columns, rows (capped) and timing."""
-    c = resolve_target(sql, cids)
+    c = c or resolve_target(sql, cids)
     sql = check_sql(sql)
     t0 = time.time()
     conn = _open(c)
@@ -435,8 +441,8 @@ def result_text(sql, res=None, error=None, db_name=None):
     return head + summary + ("\n" + "\n".join(lines) if n else "")
 
 
-def system_prompt(cids):
-    """Instructions + each database's notes and schema, for chats with databases turned on."""
+def system_prompt(cids, files_section=None):
+    """Instructions + each database's notes and schema, plus attached file tables if any."""
     sections, names = [], []
     for cid in cids:
         try:
@@ -452,16 +458,21 @@ def system_prompt(cids):
             body = f"(This database is currently unavailable: {str(e).strip()[:300]})"
         notes = f"Notes about this database:\n{c['context']}\n\n" if c.get("context") else ""
         sections.append(f"=== Database: {c['name']} (PostgreSQL) ===\n{notes}{body}")
+    if files_section:
+        names.append(FILES_SOURCE)
+        sections.append(f"=== Database: {FILES_SOURCE} (attached files, DuckDB) ===\n{files_section}")
     if not sections:
         return ""
     multi = len(sections) > 1
-    target = (f"\n- This chat has {len(sections)} databases ({', '.join(names)}). Start every query with a line "
-              "'-- db: <name>' naming the database it is for. A query can only use one database; to combine "
-              "data from several, run one query per database and combine the results yourself.") if multi else ""
-    return f"""You can read data from {'these PostgreSQL databases' if multi else 'a PostgreSQL database'}. To look something up, write a read-only SQL query in a ```sql code block. The app runs it and sends you the results in the next message, then you answer from those results.
+    target = (f"\n- This chat has {len(sections)} data sources ({', '.join(names)}). Start every query with a line "
+              "'-- db: <name>' naming the source it is for. A query can only use one source; to combine "
+              "data from several, run one query per source and combine the results yourself.") if multi else ""
+    what = ("these data sources" if multi else
+            "tables loaded from files attached to this chat" if files_section else "a PostgreSQL database")
+    return f"""You can read data from {what}. To look something up, write a read-only SQL query in a ```sql code block. The app runs it and sends you the results in the next message, then you answer from those results.
 
 Rules:
-- Only SELECT, WITH, EXPLAIN, SHOW, VALUES or TABLE queries run, one statement per block, in a read-only transaction with a {DB_TIMEOUT_MS // 1000}s timeout.
+- Only read-only queries run (SELECT, WITH, EXPLAIN; on PostgreSQL also SHOW, VALUES, TABLE), one statement per block, with a {DB_TIMEOUT_MS // 1000}s timeout.
 - At most {DB_MAX_ROWS} rows come back. Prefer aggregates (COUNT, SUM, GROUP BY), filters and LIMIT over fetching raw rows.
 - Use only the tables and columns in the schema below. Use schema-qualified names when unsure.
 - After writing a query, stop and wait for the results. Never make up results.

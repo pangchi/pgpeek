@@ -3,9 +3,10 @@
 Ask questions about your PostgreSQL databases in plain language. pgPeek is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
 - **Databases**: save any number of PostgreSQL connections, direct or through SSH, and choose which ones each chat can use. Queries are strictly read-only.
-- **Files**: images, PDF, Word, Excel, CSV, JSON, text, code and zip archives.
+- **Files**: images, PDF, Word, Excel, CSV, JSON, text, code and zip archives. Attached CSV, TSV and Excel files become SQL tables, so totals and comparisons are computed exactly, not estimated.
 - **Any model**: OpenAI, Azure OpenAI proxies, vLLM, Ollama, LM Studio, LiteLLM, OpenRouter and others. No tool/function-calling support needed.
 - **Big inputs**: requests larger than a set size are split into parts automatically and combined into one answer.
+- **Keep your chats**: chats are saved in your browser between sessions; export them as JSON backups to move or restore, or as a standalone HTML page to read, print or share.
 
 ## Contents
 
@@ -13,7 +14,9 @@ Ask questions about your PostgreSQL databases in plain language. pgPeek is a Cha
 - [Using databases](#using-databases)
 - [Security](#security)
 - [Attaching files](#attaching-files)
+- [Querying CSV and Excel files](#querying-csv-and-excel-files)
 - [Large requests](#large-requests)
+- [Saving, exporting and importing chats](#saving-exporting-and-importing-chats)
 - [Configuration](#configuration)
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
@@ -38,6 +41,8 @@ Open http://127.0.0.1:5000, then:
 3. Ask a question, e.g. *"How many jobs finished last week, by board?"* The model replies with a SQL block; press **Run**, and it answers from the result.
 
 To skip pressing Run, turn on **Settings → Run the model's SQL queries automatically**.
+
+**Typing and editing messages**: Enter sends and Shift+Enter starts a new line; the message box grows to 40% of the window, then scrolls. **Edit** under any of your messages opens it in place, with its line breaks, in a box that grows to 60% of the window. There, Enter adds a new line, **Ctrl+Enter** (⌘+Enter on Mac) or **Save & send** resends it, and **Esc** or **Cancel** leaves it unchanged. Saving replaces that message and everything after it (the editor says how many messages that is), and keeps the message's attachments.
 
 The API client is created exactly as:
 
@@ -149,13 +154,14 @@ Connections are stored in `connections.sqlite`. Database passwords, SSH password
 
 ## Attaching files
 
-Attach files with the paperclip, by dragging them onto the window, or by pasting images. They upload immediately and show as chips you can remove before sending.
+Attach files with the paperclip, by dragging them onto the window, or by pasting images. They upload immediately and show as chips with upload progress; removing a chip cancels its upload, and Send waits until uploads finish.
 
 | Type | Files | Sent to the model as |
 |---|---|---|
 | Images | JPG/JPEG, PNG, GIF, WebP, BMP | Images (needs a vision-capable model). BMP is converted to PNG. |
 | Documents | PDF, Word (.docx), TXT, MD | Text. Word tables are included. Scanned PDFs need OCR first. |
-| Data | CSV, Excel (.xlsx), JSON, YAML, XML, TSV | Text. Each Excel sheet becomes a CSV block of cell values. |
+| Data | CSV, TSV, Excel (.xlsx) | **SQL tables** the model queries (see [Querying CSV and Excel files](#querying-csv-and-excel-files)), plus a short preview. Without DuckDB installed: the full text, each Excel sheet as a CSV block. |
+| Data | JSON, YAML, XML | Text. |
 | Code | Python, JavaScript, HTML, CSS, C/C++, Java, Go, Rust and ~40 more, plus Dockerfile and Makefile | Text |
 | Archives | ZIP | Each file inside, handled by the rules above |
 
@@ -173,6 +179,43 @@ The zip is opened on the server. The model receives a listing of included and sk
 - **Text limit**: `MAX_TEXT_CHARS` is shared across the whole zip. Small files are kept whole and the rest is split evenly among the larger ones, so only the largest are trimmed. Trimmed files are marked and end with a `[... truncated: showing X of Y characters]` note.
 - **Safe extraction**: files are never written to their paths from inside the zip, so `../` entries can't escape, and the total-size cap stops zip bombs.
 
+## Querying CSV and Excel files
+
+Drop one or more CSV, TSV or Excel files into a chat (or pick several with the paperclip) and ask about them. Each file, and each sheet of an Excel file, becomes a table the model can query with SQL, the same way it queries your databases: it writes a query, you press **Run** (or auto-run does), pgPeek computes the result and the model answers from it. Totals, counts, averages, rankings and joins across files are computed exactly over every row, instead of the model estimating from text. Requires `duckdb`.
+
+**What happens on upload**
+
+- The file is loaded into a small DuckDB database stored with the upload (`uploads/<id>/tables.duckdb`). Column types (whole numbers, decimals, dates, timestamps, text) are detected from all rows, and the delimiter and header row are detected automatically.
+- Column names are converted to `lower_snake_case`: `Unit Price ($)` becomes `unit_price`, `Order Date` becomes `order_date`. Names that are SQL keywords get a leading underscore (`Operator` becomes `_operator`); the schema the model sees shows the final names.
+- **Big files**: CSV, TSV and Excel files can be up to `MAX_TABLE_UPLOAD_MB` (default **200 MB**), well above the 20 MB limit for other files, because only a preview reaches the model. The chip shows upload progress, then *Loading table…* while the table is built. Only the first 64 KB of the file is read as text.
+- CSVs saved by Excel in Windows encoding (accents like *München*) are converted to UTF-8 first.
+- The chip shows the result, e.g. *85 KB · table, 2,500 rows* or *2 tables, 4 rows* for a two-sheet workbook. Empty sheets are skipped.
+
+**What the model sees**
+
+- Instead of the whole file, the message carries a 15-line preview and a note that the full data is in a table, so a big CSV no longer fills the request or triggers [splitting](#large-requests).
+- The system prompt lists each table: its name, source file and sheet, row count, column names and types, and 3 sample rows.
+- **Table names** come from the file name: `march_orders.csv` → `march_orders`; Excel sheets add the sheet name (`qa.xlsx` sheets *Defects* and *Targets* → `qa_defects`, `qa_targets`). A second file with the same name becomes `march_orders_2`.
+- **Every file attached anywhere in the chat** is available to every later query, so you can attach more files mid-conversation and join them with earlier ones.
+- The SQL dialect is DuckDB's, which is close to PostgreSQL's: `::` casts, `ILIKE`, `date_trunc`, `string_agg`, `FILTER`, window functions and CTEs all work.
+
+**Files and databases in one chat**: the files appear as a data source named `files` next to any ticked databases, and the chip shows e.g. *workshop + files* (or just *Files*). With more than one source, the model starts each query with `-- db: files` or `-- db: <database>`. A query can't join a file to a database table directly; the model runs one query on each and combines the results. Because of this, `files` can't be used as a saved connection name.
+
+**Safety**: each query runs in a fresh in-memory DuckDB with the chat's files attached read-only. Only a single `SELECT` (or `EXPLAIN`) is accepted, and before your query runs the session is locked so SQL can't read or write other files, attach databases, install extensions, or change those settings back. The same row cap (`DB_MAX_ROWS`) and timeout (`DB_TIMEOUT_MS`) as database queries apply, and memory is capped at `FILES_SQL_MEMORY` (default 1 GB). Tested: `DELETE`, `COPY … TO`, `ATTACH`, `INSTALL`, `read_csv('/etc/passwd')`, `SET enable_external_access=true` and multiple statements are all refused.
+
+**Speed and memory** (measured on a 2-core, 8 GB test machine):
+
+| File | Rows | Load time | Server memory peak | Stored table | Query (grouped total over all rows) |
+|---|---|---|---|---|---|
+| 199 MB CSV | 3.1 million | 8 s | ~460 MB | 25 MB | 0.06 s |
+| 194 MB Excel, 4 sheets | 4.2 million | 66 s | ~1.5 GB | 35 MB | 0.03 s per sheet |
+
+Excel is slower because each sheet is converted to CSV first. With `python-calamine` installed (the default reader) this runs at about 65,000 rows a second and uses roughly 1 GB of memory per million-row sheet, released between sheets. Without it, or with `EXCEL_READER=openpyxl`, memory stays around 150 MB but loading is 10–40× slower, which is impractical above a few hundred thousand rows. On a machine with little memory, saving big workbooks as CSV first is the fastest and leanest option.
+
+Disk use per file is the original (kept so it can be opened from the chat) plus the table, which is usually much smaller than the source.
+
+**Limits**: CSV/TSV/Excel up to `MAX_TABLE_UPLOAD_MB` (200 MB), other files up to `MAX_UPLOAD_MB` (20 MB). A CSV that can't be read as a table falls back to text, and then the 20 MB limit applies. Excel allows about a million rows per sheet; bigger data needs several sheets or a CSV. CSV and Excel files inside a zip are sent as text, not tables; attach them directly to query them. Excel formulas give their last saved values (see [Attaching files](#attaching-files)).
+
 ## Large requests
 
 No single request to the model is larger than `MAX_SEND_CHARS` (default 100,000 characters, counting the system prompt, history, message and file text; images don't count). When a message would be bigger:
@@ -184,6 +227,35 @@ No single request to the model is larger than `MAX_SEND_CHARS` (default 100,000 
 The reply shows progress ("Reading part 2 of 5…") and afterwards "Read in N parts".
 
 Trade-offs: an N-part send costs N + 1 or more requests; the answer works from notes, not the full text, so it suits summaries, reviews and search-style questions better than exact rewrites; follow-up questions re-read the files each time; and only the most recent turns of history are kept in split mode. Raise `MAX_SEND_CHARS` toward your model's context window (roughly 3–4 characters per token) to send more in one go.
+
+## Saving, exporting and importing chats
+
+### Where chats are kept
+
+Every chat is saved automatically in your browser's local storage as you go. Close pgPeek, come back the next day, pick the chat in the sidebar and keep typing: the model gets the whole earlier conversation, and the chat keeps its ticked databases and attachments.
+
+Chats stay in the browser that created them, at that exact address. `http://localhost:5000`, `http://127.0.0.1:5000` and `http://192.168.1.20:5000` each count as a separate site with separate chats. Private/incognito windows, "clear site data when closing" settings and browser cleaners remove them. Use export to keep a copy that doesn't depend on any of this.
+
+### Export
+
+| Where | Option | What you get |
+|---|---|---|
+| Sidebar | **Export all chats** | `pgpeek-chats-<date>.json` with every chat. A backup you can import later, here or in another browser or PC. |
+| Download icon, top right | **Download as JSON** | The current chat only, in the same format. |
+| Download icon, top right | **Download as HTML** | The current chat as one self-contained web page: formatted replies, SQL result tables, attached images embedded, the databases used, and the export date. Opens in any browser without pgPeek, prints cleanly, follows light/dark mode, and contains no scripts. |
+
+The export icon is greyed out until the current chat has messages, and exporting waits until a reply has finished.
+
+### Import
+
+**Import chats** in the sidebar loads a JSON file made by either export (or a bare list of chats).
+
+- Imported chats go to the top of the sidebar, and the first one opens.
+- A chat that's already here with identical messages is skipped; one with the same id but different messages is added as a copy titled "… (imported)", so nothing is overwritten.
+- **Databases are reconnected by name.** The export records each chat's database names, so on another PC they're matched to saved connections with the same name (case-insensitive). Chats whose databases aren't found just start with no database ticked.
+- **Attachments are references to files in `uploads/` on the server**, not copies. Imported into the same pgPeek they work as before; on a different server they show as unavailable and the model is told the file is missing. The HTML export is the way to keep attached images with a chat.
+- Files are checked before anything is saved: invalid JSON, files with no chats, unknown fields and malformed attachment ids are rejected or dropped. Message content is displayed as text or sanitised markdown, exactly like normal chats.
+- If the browser's storage is full, the import is undone and a message says so. Browsers allow roughly 5–10 MB per site; export and delete old chats to make room.
 
 ## Configuration
 
@@ -228,9 +300,12 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | Variable | Default | Notes |
 |---|---|---|
 | `MAX_UPLOAD_MB` | `20` | Per-file upload limit |
+| `MAX_TABLE_UPLOAD_MB` | `200` | Per-file limit for CSV/TSV/Excel loaded as SQL tables (needs `duckdb`; otherwise `MAX_UPLOAD_MB` applies) |
+| `EXCEL_READER` | `calamine` | `calamine` (fast, ~1 GB per million-row sheet) or `openpyxl` (slow, low memory) |
 | `MAX_TEXT_CHARS` | `400000` | Text kept per file or zip |
 | `ALLOWED_EXTENSIONS` | built-in list | Comma list that replaces the allowed types, e.g. `.png,.pdf,.csv` |
 | `ZIP_MAX_FILES` / `ZIP_MAX_TOTAL_MB` / `ZIP_MAX_IMAGES` | `300` / `100` / `10` | Zip limits |
+| `FILES_SQL_MEMORY` | `1GB` | Memory limit for SQL over attached CSV/Excel files |
 | `MAX_SEND_CHARS` | `100000` | Largest single request to the model |
 | `PART_NOTE_TOKENS` | `2000` | Length of each part's notes when splitting |
 | `UPLOAD_DIR` | `./uploads` | Where uploads are stored |
@@ -240,10 +315,11 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | Variable | Default | Notes |
 |---|---|---|
 | `HOST` / `PORT` | `127.0.0.1` / `5000` | `HOST=0.0.0.0` opens it to your network; see [Security](#security) |
+| `FLASK_DEBUG` | `0` | `1` turns on Flask's debug mode (auto-reload on code changes, in-browser debugger) for development only. Never combine it with `HOST=0.0.0.0`: the debugger can run code. |
 
 ### Dependencies
 
-`flask`, `openai` and `python-dotenv` are required. The rest each enable one feature, and the app explains what to install if one is missing: `psycopg[binary]` (PostgreSQL), `cryptography` (saved connections), `paramiko` (SSH), `pypdf` (PDF), `python-docx` (Word), `openpyxl` (Excel), `Pillow` (BMP).
+`flask`, `openai` and `python-dotenv` are required. The rest each enable one feature, and the app explains what to install if one is missing: `psycopg[binary]` (PostgreSQL), `duckdb` (SQL over CSV/Excel files), `python-calamine` (fast Excel loading), `cryptography` (saved connections), `paramiko` (SSH), `pypdf` (PDF), `python-docx` (Word), `openpyxl` (Excel), `Pillow` (BMP).
 
 ## Troubleshooting
 
@@ -255,9 +331,14 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | *Connected to SSH, but the SSH server couldn't reach the database* | The database host/port are wrong as seen from the SSH server (often `localhost:5432`), or port forwarding is disabled. |
 | *SSH host key … has CHANGED* | If the server was rebuilt, delete its line from `ssh_known_hosts`. Otherwise, don't connect. |
 | *Can't decrypt saved connection* | `secret.key` or `APP_SECRET_KEY` changed. Restore the original key, or edit the connection and re-enter its passwords. |
-| *This chat has several databases. Add '-- db: <name>'…* | Sent to the model automatically; it retries with the right name. |
+| Chats missing after reopening pgPeek | Check the address matches the one you used before (`localhost` vs `127.0.0.1` vs an IP), and that you're not in a private window. Restore from an exported JSON file with **Import chats**. |
+| *Couldn't save chats: the browser's storage is full* | Export your chats, then delete old ones. |
 | Chip is red / "Database off" | Click it to tick databases or check which one is unreachable. |
 | The model says it has no database access | The database isn't ticked for this chat. |
+| *Over the 200 MB limit…* / *larger than the upload limit* | Raise `MAX_TABLE_UPLOAD_MB` (CSV/Excel) or `MAX_UPLOAD_MB` (other files). Behind nginx, also raise `client_max_body_size`. |
+| A big Excel file takes minutes or the server runs out of memory | Install `python-calamine` for speed; on low-memory machines use `EXCEL_READER=openpyxl`, or save the workbook as CSV first (much faster to load). |
+| A CSV shows as text, not *table, N rows* | Install `duckdb` and re-attach the file; tables are made at upload. Files the parser can't read as a table still work as text. |
+| *This chat has several data sources…* | Sent to the model automatically when it forgets `-- db: files` or `-- db: <database>`; it retries. |
 | Formatting shows as plain text | The markdown library couldn't load from cdnjs (offline). SQL blocks, Run and auto-run still work. |
 
 ## Project layout
@@ -267,6 +348,7 @@ app.py               Flask app: chat streaming, uploads, splitting, API routes
 db.py                PostgreSQL: connections, schema, read-only queries, prompts
 store.py             Saved connections in SQLite, secrets encrypted
 ssh_tunnel.py        SSH tunnels (port forwarding) to reach databases
+filesql.py           SQL over attached CSV/TSV/Excel files (DuckDB, read-only sandbox)
 templates/index.html The whole web UI (HTML, CSS and JS in one file)
 requirements.txt
 .env.example
@@ -287,7 +369,7 @@ All responses are JSON unless noted.
 
 **Files**
 
-- `POST /api/upload` — multipart field `file`; returns `{id, name, mime, size, kind, truncated, stats}` (`kind` is `image`, `text` or `zip`), or `{error}` with status 400/413
+- `POST /api/upload` — multipart field `file`; returns `{id, name, mime, size, kind, truncated, stats, tables}` (`kind` is `image`, `text` or `zip`; `tables` lists `{rows, columns, sheet}` for CSV/TSV/Excel files loaded as SQL tables), or `{error}` with status 400/413
 - `GET /files/<id>` — the original file
 
 **Databases**
@@ -297,14 +379,15 @@ All responses are JSON unless noted.
 - `GET /api/db/connections/<id>/status` — tests the connection
 - `GET /api/db/connections/<id>/schema[?refresh=1]` — `{text, tables}`
 - `GET /api/fs/keys[?path=]` — one folder for the key picker: `{path, root, parent, dirs: [{name, path}], files: [{name, path, size, kind}], user, host}`, where `kind` is `private`, `public`, `ppk`, `other` or `unreadable`. 403 outside `KEY_BROWSE_ROOT` or when it's `off`.
-- `POST /api/db/query` — `{sql, dbs}` → `{db_id, db_name, columns, rows, row_count, truncated, ms, text}` or `{error, text}`; `text` is what the model receives
+- `POST /api/db/query` — `{sql, dbs, files}` (`files`: the chat's attachment ids in message order; CSV/Excel ones become the `files` source) → `{db_id, db_name, columns, rows, row_count, truncated, ms, text}` or `{error, text}`; `text` is what the model receives
 
 ## Running in production
 
-- Run behind gunicorn with threaded workers so streaming isn't buffered: `gunicorn -k gthread --threads 8 -b 127.0.0.1:5000 app:app`. Behind nginx, turn off proxy buffering for `/api/chat`.
+- Run behind gunicorn with threaded workers so streaming isn't buffered, and a timeout long enough to load big Excel files: `gunicorn -k gthread --threads 8 --timeout 300 -b 127.0.0.1:5000 app:app` (gunicorn's default 30 s timeout would cut off a 200 MB workbook). Behind nginx, turn off proxy buffering for `/api/chat`, and raise the upload size and timeout for `/api/upload`: `client_max_body_size 210m; proxy_read_timeout 300s;` (nginx's default upload limit is 1 MB).
 - Add authentication in front of it before opening it beyond your own machine; see [Security](#security).
+- Keep `FLASK_DEBUG` unset or `0` (the default). Earlier versions always ran in debug mode, which exposed an in-browser debugger on errors and restarted the server whenever a `.zip` was uploaded.
 - Uploaded files are never deleted automatically. Clear `uploads/` when old chats no longer need their attachments; chats that refer to removed files show them as unavailable.
-- Chats are stored in each browser's local storage, not on the server. Clearing site data removes them.
+- Chats are stored in each browser's local storage, not on the server. Clearing site data removes them; use **Export all chats** for backups. See [Saving, exporting and importing chats](#saving-exporting-and-importing-chats).
 
 ## Upgrading from DB Helper or flask-chat
 

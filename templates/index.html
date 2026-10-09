@@ -63,6 +63,7 @@ select{background:var(--bg);border:1px solid var(--line);border-radius:6px;paddi
 .msg.assistant .bubble{max-width:100%;word-wrap:break-word}
 .bubble>:first-child{margin-top:0}.bubble>:last-child{margin-bottom:0}
 .bubble pre{position:relative;background:#0d1117;color:#e6edf3;border-radius:8px;padding:14px;overflow-x:auto;font:13px/1.5 var(--mono)}
+.bubble pre:has(.copycode){padding-top:38px}
 .bubble code{font-family:var(--mono);font-size:.9em}
 .bubble :not(pre)>code{background:var(--user);padding:1px 5px;border-radius:4px}
 .bubble table{border-collapse:collapse;display:block;overflow-x:auto}
@@ -85,7 +86,8 @@ select{background:var(--bg);border:1px solid var(--line);border-radius:6px;paddi
 .composer{padding:12px 20px 18px;background:linear-gradient(transparent,var(--bg) 30%)}
 .box{max-width:780px;margin:0 auto;display:flex;align-items:flex-end;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px 8px 8px 14px}
 .box:focus-within{border-color:var(--accent)}
-textarea{flex:1;border:0;outline:0;resize:none;background:none;max-height:220px;padding:6px 0;line-height:1.5}
+#input:focus-visible{outline:none}
+textarea{flex:1;border:0;outline:0;resize:none;background:none;max-height:40vh;padding:6px 0;line-height:1.5}
 #send{flex:none;width:36px;height:36px;border-radius:9px;border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer;display:grid;place-items:center}
 #send:disabled{opacity:.35;cursor:default}
 .hint{max-width:780px;margin:6px auto 0;font-size:12px;color:var(--muted);text-align:center}
@@ -188,6 +190,27 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 .kpitem.dim{opacity:.55;cursor:default}.kpitem.dim:hover{background:none}
 .kpmsg{padding:14px;color:var(--muted);font-size:13px}.kpmsg.err{color:var(--danger)}
 
+/* export / import */
+.expwrap{position:relative}
+#exportBtn:disabled{opacity:.35;cursor:default}
+#exportMenu{position:absolute;top:calc(100% + 6px);right:0;z-index:15;min-width:250px;background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px}
+#exportMenu button{display:block;width:100%;text-align:left;background:none;border:0;padding:8px 10px;border-radius:6px;cursor:pointer;font-size:14px;color:var(--ink)}
+#exportMenu button:hover{background:var(--bg)}
+#exportMenu small{display:block;color:var(--muted);font-size:12px;margin-top:1px}
+#toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:30;max-width:min(560px,90vw);background:var(--ink);color:var(--panel);padding:10px 16px;border-radius:10px;font-size:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+#toast.err{background:var(--danger);color:#fff}
+
+/* inline message editor */
+.msg.user.editing{align-items:stretch}
+.msg [hidden]{display:none!important}
+.editbox{border:1px solid var(--accent);border-radius:14px;background:var(--panel);padding:10px 12px}
+.editbox textarea{display:block;width:100%;min-height:72px;max-height:60vh;overflow-y:auto;resize:none;line-height:1.5;padding:2px 0}
+.editbar{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.editbox:focus-within{box-shadow:0 0 0 1px var(--accent)}
+.editbox textarea:focus-visible{outline:none}
+.edithint{flex:1;font-size:12px;color:var(--muted);min-width:180px;text-align:left}
+.edithint.err{color:var(--danger)}
+
 /* settings dialog */
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--ink);padding:20px;width:min(520px,92vw)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -215,6 +238,9 @@ dialog textarea{min-height:110px;resize:vertical}
   <div class="sidefoot">
     <button id="openSettings">Settings</button>
     <button id="openDb">Database</button>
+    <button id="exportAll">Export all chats</button>
+    <button id="importBtn">Import chats</button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
     <button id="clearAll">Delete all chats</button>
   </div>
 </aside>
@@ -230,7 +256,17 @@ dialog textarea{min-height:110px;resize:vertical}
       <div id="dbMenu" hidden></div>
     </div>
     <div id="title"></div>
+    <div class="expwrap">
+      <button class="iconbtn" id="exportBtn" aria-haspopup="true" aria-label="Export this chat" title="Export this chat">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+      </button>
+      <div id="exportMenu" hidden>
+        <button id="expHtml">Download as HTML<small>Readable page to open, print or share</small></button>
+        <button id="expJson">Download as JSON<small>Backup you can import later</small></button>
+      </div>
+    </div>
   </header>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
   <div id="scroll"><div id="messages"></div></div>
   <div class="composer">
     <div id="pending"></div>
@@ -344,7 +380,7 @@ const ICON_STOP = '<rect x="6" y="6" width="12" height="12" rx="1.5" fill="curre
 let state = load() || { chats: [], current: null, settings: null, model: null };
 let controller = null;
 let pending = [];   // {key, file, status:'uploading'|'ready'|'error', meta, error, preview}
-let maxMB = 20;
+let maxMB = 20, maxTableMB = 20, tableExts = [];
 let conns = [], connStatus = {}, dbInfo = { available: true, ssh_available: true };
 let editing = null;   // id of the connection open in the manager, or null for a new one
 const SQL_LANGS = ["sql","pgsql","postgres","postgresql","plpgsql"];
@@ -352,7 +388,10 @@ const AUTO_RUN_LIMIT = 5;
 let allowedExts = null, specialNames = [];
 
 function load(){ try { return JSON.parse(localStorage.getItem(STORE)); } catch { return null; } }
-function save(){ try { localStorage.setItem(STORE, JSON.stringify(state)); } catch {} }
+function save(){
+  try { localStorage.setItem(STORE, JSON.stringify(state)); return true; }
+  catch { notify("Couldn't save chats: the browser's storage is full. Export and delete some old chats.", true); return false; }
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const cur = () => state.chats.find(c => c.id === state.current);
 
@@ -392,34 +431,57 @@ function addFiles(files){
     const ext = dot > 0 ? file.name.slice(dot).toLowerCase() : "";
     if (allowedExts && !allowedExts.includes(ext) && !specialNames.includes(file.name.toLowerCase())) {
       item.status = "error"; item.error = `${ext || "No extension"} isn't an allowed type`;
-    } else if (file.size > maxMB * 1048576) { item.status = "error"; item.error = `Over ${maxMB} MB limit`; }
+    } else {
+      const limit = tableExts.includes(ext) ? maxTableMB : maxMB;
+      if (file.size > limit * 1048576) { item.status = "error"; item.error = `Over the ${limit} MB limit for ${tableExts.includes(ext) ? "CSV/Excel" : "this type"}`; }
+    }
+    item.table = tableExts.includes(ext);
     if (file.type.startsWith("image/")) item.preview = URL.createObjectURL(file);
     pending.push(item);
     if (item.status === "uploading") uploadOne(item);
   }
   renderPending();
 }
-async function uploadOne(item){
+function uploadOne(item){
+  // XMLHttpRequest rather than fetch, because only XHR reports upload progress
   const fd = new FormData(); fd.append("file", item.file);
-  try {
-    const r = await fetch("/api/upload", { method: "POST", body: fd });
-    const j = await r.json().catch(() => ({ error: `Upload failed (${r.status})` }));
-    if (!r.ok || j.error) throw new Error(j.error || `Upload failed (${r.status})`);
-    item.meta = j; item.status = "ready";
-  } catch (e) { item.status = "error"; item.error = e.message; }
-  renderPending();
+  const xhr = new XMLHttpRequest(); item.xhr = xhr;
+  item.progress = 0;
+  xhr.upload.onprogress = e => {
+    if (!e.lengthComputable) return;
+    const pct = Math.floor(e.loaded / e.total * 100);
+    if (pct !== item.progress) { item.progress = pct; updateChipStatus(item); }
+  };
+  xhr.upload.onload = () => { item.progress = 100; updateChipStatus(item); };
+  const fail = msg => { item.status = "error"; item.error = msg; item.xhr = null; renderPending(); };
+  xhr.onload = () => {
+    let j = null; try { j = JSON.parse(xhr.responseText); } catch {}
+    if (xhr.status >= 200 && xhr.status < 300 && j && !j.error) { item.meta = j; item.status = "ready"; item.xhr = null; renderPending(); }
+    else fail(j?.error || `Upload failed (${xhr.status})`);
+  };
+  xhr.onerror = () => fail("Upload failed: couldn't reach the server");
+  xhr.onabort = () => { item.xhr = null; };
+  xhr.open("POST", "/api/upload"); xhr.send(fd);
+}
+function uploadStatus(p){
+  if (p.progress < 100) return `Uploading ${p.progress || 0}%`;
+  return p.table ? "Loading table…" : "Processing…";
+}
+function updateChipStatus(p){
+  const el = document.querySelector(`#pending .chip[data-key="${p.key}"] small`);
+  if (el) el.textContent = uploadStatus(p); else renderPending();
 }
 function renderPending(){
   const box = $("#pending"); box.innerHTML = "";
   pending.forEach(p => {
     const c = document.createElement("div");
-    c.className = "chip" + (p.status === "error" ? " err" : "");
-    const status = p.status === "uploading" ? "Uploading…" : p.status === "error" ? p.error
-      : fmtSize(p.meta.size) + (p.meta.stats ? ` · ${p.meta.stats.files} files` + (p.meta.stats.skipped ? `, ${p.meta.stats.skipped} skipped` : "") : "")
+    c.className = "chip" + (p.status === "error" ? " err" : ""); c.dataset.key = p.key;
+    const status = p.status === "uploading" ? uploadStatus(p) : p.status === "error" ? p.error
+      : fmtSize(p.meta.size) + tableNote(p.meta) + (p.meta.stats ? ` · ${p.meta.stats.files} files` + (p.meta.stats.skipped ? `, ${p.meta.stats.skipped} skipped` : "") : "")
         + (p.meta.stats?.trimmed ? ` · ${p.meta.stats.trimmed} trimmed` : p.meta.truncated ? " · truncated" : "");
     c.innerHTML = (p.preview ? `<img src="${p.preview}" alt="">` : `<div class="ficon">${esc(extOf(p.file.name))}</div>`)
       + `<div class="meta"><b>${esc(p.file.name)}</b><small>${esc(status)}</small></div><button title="Remove" aria-label="Remove">✕</button>`;
-    c.querySelector("button").onclick = () => { pending = pending.filter(x => x !== p); if (p.preview) URL.revokeObjectURL(p.preview); renderPending(); };
+    c.querySelector("button").onclick = () => { p.xhr?.abort(); pending = pending.filter(x => x !== p); if (p.preview) URL.revokeObjectURL(p.preview); renderPending(); };
     box.appendChild(c);
   });
   updateSend();
@@ -433,7 +495,7 @@ function attachmentsEl(atts){
       img.onerror = () => img.replaceWith(document.createTextNode(a.name + " (unavailable)"));
       link.appendChild(img);
     }
-    else link.innerHTML = `<div class="chip"><div class="ficon">${esc(extOf(a.name))}</div><div class="meta"><b>${esc(a.name)}</b><small>${fmtSize(a.size)}${a.stats ? " · " + a.stats.files + " files" : ""}</small></div></div>`;
+    else link.innerHTML = `<div class="chip"><div class="ficon">${esc(extOf(a.name))}</div><div class="meta"><b>${esc(a.name)}</b><small>${fmtSize(a.size)}${esc(tableNote(a))}${a.stats ? " · " + a.stats.files + " files" : ""}</small></div></div>`;
     w.appendChild(link);
   });
   return w;
@@ -489,7 +551,7 @@ function sqlBlocks(el){
     SQL_LANGS.some(l => c.classList.contains("language-" + l)));
 }
 function addRunButtons(bubble){
-  if (!chatDbs().length) return;
+  if (!canQuery()) return;
   sqlBlocks(bubble).forEach(code => {
     const pre = code.closest("pre"); if (pre.querySelector(".runsql")) return;
     const b = document.createElement("button"); b.className = "runsql"; b.textContent = "Run";
@@ -528,7 +590,7 @@ function msgEl(m, i){
     tools.appendChild(pn); }
   if (m.role === "user") {
     const ed = document.createElement("button"); ed.textContent = "Edit";
-    ed.onclick = () => editMessage(i); tools.appendChild(ed);
+    ed.onclick = () => editMessage(i, wrap); tools.appendChild(ed);
   } else if (i === cur().messages.length - 1) {
     const rg = document.createElement("button"); rg.textContent = "Regenerate";
     rg.onclick = regenerate; tools.appendChild(rg);
@@ -543,6 +605,7 @@ function render(){
   const box = $("#messages"); box.innerHTML = "";
   const c = cur();
   $("#title").textContent = c?.title || "";
+  $("#exportBtn").disabled = !c?.messages.length;
   if (!c || !c.messages.length) {
     box.style.height = "100%";
     box.innerHTML = `<div class="empty"><div><h1>pgPeek</h1><div>Ask about your data, or attach files to get started.</div></div></div>`;
@@ -634,7 +697,7 @@ function extractSQL(content){
   return sqlBlocks(tmp).map(c => c.textContent.trim()).filter(Boolean);
 }
 function maybeAutoRun(c, reply){
-  if (!state.settings.autoRun || !chatDbs(c).length || c.id !== state.current) return;
+  if (!state.settings.autoRun || !canQuery(c) || c.id !== state.current) return;
   const sqls = extractSQL(reply.content); if (!sqls.length) return;
   let streak = 0;   // query rounds since the user last typed something
   for (let k = c.messages.length - 1; k >= 0; k--) {
@@ -651,7 +714,7 @@ async function runAndSend(sqls){
   for (const sql of sqls) {
     try {
       const r = await fetch("/api/db/query", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sql, dbs: chatDbs(c) }) }).then(r => r.json());
+        body: JSON.stringify({ sql, dbs: chatDbs(c), files: chatFileIds(c) }) }).then(r => r.json());
       results.push(r);
     } catch (e) { results.push({ sql, error: "Couldn't reach the server: " + e.message, text: "```sql\n" + sql + "\n```\nError: " + e.message }); }
   }
@@ -670,6 +733,20 @@ const api = (url, opts = {}) => fetch(url, { headers: { "Content-Type": "applica
   .then(async r => { const j = await r.json().catch(() => ({ error: `Server returned ${r.status}` })); if (!r.ok && !j.error) j.error = `Server returned ${r.status}`; return j; })
   .catch(e => ({ error: "Couldn't reach the server: " + e.message }));
 function chatDbs(c = cur()){ return (c?.dbs || []).filter(id => conns.some(x => x.id === id)); }
+/* All attachment ids in message order: the server picks the CSV/Excel ones and names their tables
+   from this order, so the names match the ones the model was given. */
+function chatFileIds(c = cur()){
+  const ids = [];
+  (c?.messages || []).forEach(m => { if (m.role === "user" && m.kind !== "sql") (m.attachments || []).forEach(a => { if (!ids.includes(a.id)) ids.push(a.id); }); });
+  return ids;
+}
+function chatHasTables(c = cur()){ return (c?.messages || []).some(m => (m.attachments || []).some(a => a.tables?.length)); }
+function canQuery(c = cur()){ return chatDbs(c).length > 0 || chatHasTables(c); }
+function tableNote(x){
+  if (!x?.tables?.length) return "";
+  const rows = x.tables.reduce((n, t) => n + (+t.rows || 0), 0);
+  return x.tables.length > 1 ? ` · ${x.tables.length} tables, ${rows.toLocaleString()} rows` : ` · table, ${rows.toLocaleString()} rows`;
+}
 function connName(id){ return conns.find(x => x.id === id)?.name || id; }
 
 async function loadConnections(){
@@ -691,12 +768,14 @@ async function checkStatus(ids){
 }
 
 function updateDbToggle(){
-  const t = $("#dbToggle"), ids = chatDbs();
+  const t = $("#dbToggle"), ids = chatDbs(), files = chatHasTables();
   const bad = ids.some(id => connStatus[id] && !connStatus[id].ok);
-  t.classList.toggle("on", ids.length > 0 && !bad);
+  t.classList.toggle("on", (ids.length > 0 || files) && !bad);
   t.classList.toggle("bad", bad);
-  $("#dbLabel").textContent = !ids.length ? "Database off" : ids.length === 1 ? connName(ids[0]) : `${ids.length} databases`;
-  t.title = !ids.length ? "Choose which databases the model can query in this chat"
+  $("#dbLabel").textContent = !ids.length ? (files ? "Files" : "Database off")
+    : (ids.length === 1 ? connName(ids[0]) : `${ids.length} databases`) + (files ? " + files" : "");
+  t.title = !ids.length ? (files ? "This chat's CSV and Excel files can be queried. Click to add databases."
+                                 : "Choose which databases the model can query in this chat")
     : ids.map(id => connName(id) + (connStatus[id] && !connStatus[id].ok ? " (unavailable: " + connStatus[id].error + ")" : "")).join(", ");
 }
 function renderDbMenu(){
@@ -932,13 +1011,39 @@ function regenerate(){
   if (c.messages.at(-1)?.role === "assistant") c.messages.pop();
   send(null);
 }
-function editMessage(i){
-  const c = cur(); if (controller) return;
+function editMessage(i, wrap){
+  const c = cur(); if (controller || !c || wrap.querySelector(".editbox")) return;
   const old = c.messages[i];
-  const t = prompt("Edit message", old.content);
-  if (t === null || (!t.trim() && !old.attachments?.length)) return;
-  c.messages = c.messages.slice(0, i);
-  send(t.trim(), old.attachments);
+  const bubble = wrap.querySelector(".bubble"), tools = wrap.querySelector(".tools");
+  const later = c.messages.length - i - 1;
+  const box = document.createElement("div"); box.className = "editbox";
+  box.innerHTML = `<textarea aria-label="Edit message" spellcheck="true"></textarea>
+    <div class="editbar"><span class="edithint"></span>
+    <button class="btn" type="button">Cancel</button><button class="btn primary" type="button">Save &amp; send</button></div>`;
+  const ta = box.querySelector("textarea"), hint = box.querySelector(".edithint");
+  const [cancelBtn, saveBtn] = box.querySelectorAll("button");
+  const defaultHint = "Ctrl+Enter to send · Esc to cancel" + (later ? ` · replaces the ${later} message${later > 1 ? "s" : ""} after this` : "");
+  hint.textContent = defaultHint;
+  ta.value = old.content;
+  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight + 2, window.innerHeight * 0.6) + "px"; };
+  const close = () => { box.remove(); wrap.classList.remove("editing"); if (bubble) bubble.hidden = false; tools.hidden = false; };
+  const submit = () => {
+    const t = ta.value.trim();
+    if (!t && !old.attachments?.length) { hint.textContent = "Type a message first."; hint.classList.add("err"); ta.focus(); return; }
+    if (controller) return;
+    c.messages = c.messages.slice(0, i);
+    send(t, old.attachments);
+  };
+  ta.addEventListener("input", () => { grow(); if (hint.classList.contains("err")) { hint.classList.remove("err"); hint.textContent = defaultHint; } });
+  ta.addEventListener("keydown", e => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.isComposing) { e.preventDefault(); submit(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }
+  });
+  cancelBtn.onclick = close; saveBtn.onclick = submit;
+  wrap.classList.add("editing"); if (bubble) bubble.hidden = true; tools.hidden = true;
+  wrap.insertBefore(box, tools);
+  grow(); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+  box.scrollIntoView({ block: "nearest" });
 }
 
 function setBusy(b){
@@ -955,7 +1060,7 @@ function updateSend(){
 
 /* ---------- input ---------- */
 const input = $("#input");
-function autosize(){ input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 220) + "px"; }
+function autosize(){ input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, window.innerHeight * 0.4) + "px"; }
 input.addEventListener("input", () => { autosize(); updateSend(); });
 input.addEventListener("keydown", e => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
@@ -986,6 +1091,220 @@ $("#toggleSide").onclick = () => $("#sidebar").classList.toggle("hidden");
 $("#clearAll").onclick = () => { if (controller || !confirm("Delete all chats?")) return; state.chats = []; state.current = null; save(); render(); };
 $("#model").onchange = e => { state.model = e.target.value; save(); };
 
+/* ---------- export / import ---------- */
+const EXPORT_FORMAT = "pgpeek-chats";
+let toastTimer = null;
+function notify(text, isErr){
+  const t = $("#toast"); if (!t) return;
+  t.textContent = text; t.className = isErr ? "err" : ""; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, isErr ? 7000 : 4000);
+}
+function download(name, data, type){
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement("a"); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const slug = s => (s || "chat").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50) || "chat";
+const today = () => new Date().toISOString().slice(0, 10);
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const escAttr = t => esc(String(t)).replace(/"/g, "&quot;");
+
+function exportable(c){   // a chat plus the names of its databases, so imports can reconnect them by name
+  return { ...c, db_names: chatDbs(c).map(connName) };
+}
+function exportJSON(chats, filename){
+  const data = { format: EXPORT_FORMAT, version: 1, exported_at: new Date().toISOString(), chats: chats.map(exportable) };
+  download(filename, JSON.stringify(data, null, 2), "application/json");
+}
+
+/* Import: accept our export, a bare array of chats, or a single chat; keep only known fields */
+const FILE_ID = /^[0-9a-f]{32}$/;
+function cleanResult(r){
+  r = r && typeof r === "object" ? r : {};
+  const rows = Array.isArray(r.rows) ? r.rows.filter(Array.isArray).slice(0, 100)
+    .map(row => row.map(v => v === null || typeof v === "number" || typeof v === "boolean" ? v : String(v))) : [];
+  return { sql: String(r.sql || ""), error: r.error ? String(r.error) : undefined, db_name: r.db_name ? String(r.db_name) : undefined,
+           columns: Array.isArray(r.columns) ? r.columns.map(String) : [], rows, row_count: +r.row_count || rows.length,
+           truncated: !!r.truncated, ms: +r.ms || 0, rows_stored: rows.length };
+}
+function cleanChat(c){
+  if (!c || typeof c !== "object" || !Array.isArray(c.messages)) return null;
+  const messages = [];
+  for (const m of c.messages) {
+    if (!m || !["user", "assistant"].includes(m.role) || typeof m.content !== "string") continue;
+    const out = { role: m.role, content: m.content };
+    if (Array.isArray(m.attachments)) {
+      const atts = m.attachments.filter(a => a && FILE_ID.test(a.id)).map(a => ({
+        id: a.id, name: String(a.name || "file"), mime: String(a.mime || ""), size: +a.size || 0,
+        kind: ["image", "text", "zip"].includes(a.kind) ? a.kind : "text", truncated: !!a.truncated,
+        ...(a.stats && typeof a.stats === "object" ? { stats: { files: +a.stats.files || 0, skipped: +a.stats.skipped || 0,
+            images: +a.stats.images || 0, trimmed: +a.stats.trimmed || 0 } } : {}),
+        ...(Array.isArray(a.tables) && a.tables.length ? { tables: a.tables.slice(0, 50).map(t => ({
+            rows: +t?.rows || 0, columns: +t?.columns || 0, sheet: String(t?.sheet || "") })) } : {}) }));
+      if (atts.length) out.attachments = atts;
+    }
+    if (m.kind === "sql" && Array.isArray(m.results)) { out.kind = "sql"; out.results = m.results.map(cleanResult); }
+    if (m.error) out.error = true;
+    if (+m.parts > 1) out.parts = +m.parts;
+    messages.push(out);
+  }
+  if (!messages.length) return null;
+  const names = Array.isArray(c.db_names) ? c.db_names.map(n => String(n).toLowerCase()) : [];
+  const dbs = [...new Set([
+    ...(Array.isArray(c.dbs) ? c.dbs.filter(id => conns.some(x => x.id === id)) : []),
+    ...conns.filter(x => names.includes(x.name.toLowerCase())).map(x => x.id)])];
+  return { id: typeof c.id === "string" && c.id ? c.id.slice(0, 40) : uid(),
+           title: String(c.title || messages[0].content.slice(0, 48) || "Imported chat").slice(0, 200), messages, dbs };
+}
+async function importChats(file){
+  if (controller) { notify("Wait for the current reply to finish first.", true); return; }
+  let data;
+  try { data = JSON.parse(await file.text()); }
+  catch { notify(`${file.name} isn't a valid JSON file.`, true); return; }
+  const list = Array.isArray(data) ? data : Array.isArray(data?.chats) ? data.chats : data?.messages ? [data] : null;
+  if (!list) { notify(`${file.name} doesn't contain pgPeek chats.`, true); return; }
+  const before = state.chats.slice(), beforeCurrent = state.current;
+  let added = 0, same = 0, bad = 0;
+  const incoming = [];
+  for (const raw of list) {
+    const c = cleanChat(raw);
+    if (!c) { bad++; continue; }
+    const existing = state.chats.find(x => x.id === c.id);
+    if (existing) {
+      if (JSON.stringify(existing.messages) === JSON.stringify(c.messages)) { same++; continue; }
+      c.id = uid(); c.title += " (imported)";
+    }
+    incoming.push(c); added++;
+  }
+  if (!added) {
+    notify(same ? `Nothing new: ${same} chat${same > 1 ? "s are" : " is"} already here.` : "No chats found in that file.", !same);
+    return;
+  }
+  state.chats = [...incoming, ...state.chats];
+  state.current = incoming[0].id;
+  if (!save()) { state.chats = before; state.current = beforeCurrent; render(); return; }
+  render();
+  notify(`Imported ${added} chat${added > 1 ? "s" : ""}` + (same ? `, skipped ${same} already here` : "") +
+         (bad ? `, ignored ${bad} unreadable` : "") + ".");
+  const used = [...new Set(incoming.flatMap(c => c.dbs))]; if (used.length) checkStatus(used);
+}
+
+/* HTML export: one self-contained page (styles inline, images embedded, no scripts) */
+const EXPORT_CSS = `
+:root{--bg:#fff;--ink:#1b2430;--muted:#66727f;--line:#dfe3e8;--user:#e8eff4;--code:#f4f6f8;--danger:#b4443a;--accent:#2f6f8f}
+@media (prefers-color-scheme:dark){:root{--bg:#141a21;--ink:#e3e8ee;--muted:#8c99a6;--line:#2a3440;--user:#223040;--code:#1d252f;--danger:#e07a70;--accent:#5ba3c6}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:820px;margin:0 auto;padding:32px 20px 48px}
+header{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:24px}
+h1{font-size:22px;margin:0 0 4px;font-weight:600}
+.meta{color:var(--muted);font-size:13px}
+.msg{margin:0 0 22px}
+.who{font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600}
+.msg.user .bubble{background:var(--user);padding:10px 14px;border-radius:12px;white-space:pre-wrap;word-wrap:break-word}
+.bubble>:first-child{margin-top:0}.bubble>:last-child{margin-bottom:0}
+.bubble.error{color:var(--danger)}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px;overflow-x:auto;font:13px/1.5 ui-monospace,Consolas,monospace}
+code{font-family:ui-monospace,Consolas,monospace;font-size:.92em}
+:not(pre)>code{background:var(--code);padding:1px 5px;border-radius:4px}
+table{border-collapse:collapse;font-size:13px;margin:8px 0}
+th,td{border:1px solid var(--line);padding:5px 9px;text-align:left;vertical-align:top}
+th{background:var(--code)}
+blockquote{border-left:3px solid var(--line);margin-left:0;padding-left:12px;color:var(--muted)}
+.atts{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.atts img{max-width:320px;max-height:240px;border-radius:8px;border:1px solid var(--line)}
+.file{display:inline-block;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:13px;color:var(--muted)}
+.sql{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin:0 0 10px}
+.sql .head{background:var(--code);padding:7px 12px;font-size:13px;border-bottom:1px solid var(--line)}
+.sql .head span{color:var(--muted)}
+.sql pre{margin:0;border:0;border-radius:0;border-bottom:1px solid var(--line)}
+.sql .body{padding:8px 12px;overflow-x:auto}
+.sql .err{color:var(--danger);font:13px ui-monospace,Consolas,monospace;white-space:pre-wrap}
+.null{color:var(--muted);font-style:italic}
+.note{color:var(--muted);font-size:12px}
+footer{border-top:1px solid var(--line);margin-top:32px;padding-top:12px;color:var(--muted);font-size:12px}
+@media print{body{background:#fff;color:#000}main{max-width:none;padding:0}pre,.sql,table,img{break-inside:avoid}}`;
+
+function sqlHTML(r){
+  const meta = r.error ? "failed" : `${r.row_count}${r.truncated ? "+" : ""} row${r.row_count === 1 && !r.truncated ? "" : "s"} · ${r.ms} ms`;
+  let body;
+  if (r.error) body = `<div class="err">${esc(r.error)}</div>`;
+  else if (!r.columns?.length) body = `<div class="note">No columns returned.</div>`;
+  else {
+    const head = r.columns.map(c => `<th>${esc(c)}</th>`).join("");
+    const rows = (r.rows || []).map(row => "<tr>" + row.map(v => v === null ? `<td class="null">NULL</td>` : `<td>${esc(String(v))}</td>`).join("") + "</tr>").join("");
+    body = `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>` +
+      (!r.row_count ? `<div class="note">No rows.</div>` : (r.rows_stored < r.row_count ? `<div class="note">Showing ${r.rows_stored} of ${r.row_count}${r.truncated ? "+" : ""} rows.</div>` : ""));
+  }
+  return `<div class="sql"><div class="head">Query result${r.db_name ? ` <span>· ${esc(r.db_name)}</span>` : ""} <span>· ${esc(meta)}</span></div>` +
+         `<pre><code>${esc(r.sql)}</code></pre><div class="body">${body}</div></div>`;
+}
+async function imageDataUrl(id){
+  try {
+    const r = await fetch("/files/" + id); if (!r.ok) return null;
+    const b = await r.blob();
+    return await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = () => res(null); f.readAsDataURL(b); });
+  } catch { return null; }
+}
+async function chatHTML(c){
+  const parts = [];
+  for (const m of c.messages) {
+    if (m.kind === "sql") { parts.push(`<section class="msg">${m.results.map(sqlHTML).join("")}</section>`); continue; }
+    let atts = "";
+    if (m.attachments?.length) {
+      const items = [];
+      for (const a of m.attachments) {
+        const url = a.kind === "image" ? await imageDataUrl(a.id) : null;
+        items.push(url ? `<img src="${escAttr(url)}" alt="${escAttr(a.name)}">`
+          : `<span class="file">${esc(a.name)} · ${fmtSize(a.size)}${a.stats ? ` · ${a.stats.files} files` : ""}${a.kind === "image" ? " (image unavailable)" : ""}</span>`);
+      }
+      atts = `<div class="atts">${items.join("")}</div>`;
+    }
+    const body = m.role === "user" ? (m.content ? `<div class="bubble">${esc(m.content)}</div>` : "")
+                                   : `<div class="bubble${m.error ? " error" : ""}">${md(m.content)}</div>`;
+    const note = m.parts > 1 ? `<div class="note">Read in ${m.parts} parts</div>` : "";
+    parts.push(`<section class="msg ${m.role}"><div class="who">${m.role === "user" ? "You" : "Assistant"}</div>${atts}${body}${note}</section>`);
+  }
+  const dbs = chatDbs(c).map(connName);
+  const when = new Date().toLocaleString();
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(c.title || "Chat")} – pgPeek</title><style>${EXPORT_CSS}</style></head>
+<body><main><header><h1>${esc(c.title || "Chat")}</h1>
+<div class="meta">Exported from pgPeek on ${esc(when)}${dbs.length ? ` · Database${dbs.length > 1 ? "s" : ""}: ${esc(dbs.join(", "))}` : ""}</div></header>
+${parts.join("\n")}
+<footer>${plural(c.messages.filter(m => m.kind !== "sql").length, "message")} · ${plural(c.messages.filter(m => m.kind === "sql").length, "query result")}</footer>
+</main></body></html>`;
+}
+
+const expMenu = $("#exportMenu");
+$("#exportBtn").onclick = e => { e.stopPropagation(); if (!cur()?.messages.length) return; expMenu.hidden = !expMenu.hidden; };
+document.addEventListener("click", e => { if (!e.target.closest(".expwrap")) expMenu.hidden = true; });
+$("#expHtml").onclick = async () => {
+  expMenu.hidden = true;
+  const c = cur(); if (!c?.messages.length) return;
+  if (controller) { notify("Wait for the reply to finish first.", true); return; }
+  notify("Preparing HTML…");
+  download(`${slug(c.title)}-${today()}.html`, await chatHTML(c), "text/html");
+  notify("Chat exported as HTML.");
+};
+$("#expJson").onclick = () => {
+  expMenu.hidden = true;
+  const c = cur(); if (!c?.messages.length) return;
+  if (controller) { notify("Wait for the reply to finish first.", true); return; }
+  exportJSON([c], `${slug(c.title)}-${today()}.json`);
+  notify("Chat exported. Use Import chats to load it again.");
+};
+$("#exportAll").onclick = () => {
+  const chats = state.chats.filter(c => c.messages.length);
+  if (!chats.length) { notify("There are no chats to export yet.", true); return; }
+  exportJSON(chats, `pgpeek-chats-${today()}.json`);
+  notify(`Exported ${chats.length} chat${chats.length > 1 ? "s" : ""}.`);
+};
+$("#importBtn").onclick = () => $("#importFile").click();
+$("#importFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) importChats(f); };
+
 /* ---------- settings ---------- */
 const dlg = $("#settings");
 $("#openSettings").onclick = () => { $("#sysPrompt").value = state.settings.system; $("#temp").value = state.settings.temperature; $("#autoRun").checked = !!state.settings.autoRun; dlg.showModal(); };
@@ -1002,7 +1321,9 @@ $("#saveSettings").onclick = () => {
 (async function init(){
   if (window.innerWidth < 760) $("#sidebar").classList.add("hidden");
   const cfg = await fetch("/api/config").then(r => r.json()).catch(() => ({}));
-  if (cfg.max_upload_mb) maxMB = cfg.max_upload_mb;
+  if (cfg.max_upload_mb) maxMB = maxTableMB = cfg.max_upload_mb;
+  if (cfg.max_table_upload_mb) maxTableMB = cfg.max_table_upload_mb;
+  if (Array.isArray(cfg.table_extensions)) tableExts = cfg.table_extensions;
   if (cfg.allowed_extensions) {
     allowedExts = cfg.allowed_extensions; specialNames = cfg.special_names || [];
     $("#fileInput").accept = allowedExts.join(",");

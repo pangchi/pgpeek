@@ -21,11 +21,17 @@ Configure with environment variables (or a .env file):
     ALLOWED_EXTENSIONS - optional comma list overriding the allowed upload types, e.g. ".png,.pdf,.csv"
 """
 import base64
+import csv
+import io
+import gc
 import json
 import mimetypes
 import os
 import re
 import shutil
+import stat
+import sys
+import threading
 import time
 import uuid
 import zipfile
@@ -277,9 +283,23 @@ def upload():
     if ext not in ALLOWED_EXTS and f.filename.lower() not in SPECIAL_NAMES:
         return jsonify(error=f"{ext or 'Files without an extension'} isn't an allowed file type."), 400
     fid = uuid.uuid4().hex
-    name = secure_filename(f.filename) or "file"
     folder = os.path.join(UPLOAD_DIR, fid)
-    os.makedirs(folder)
+    with _uploads_lock:   # while processing, Storage shows it as uploading and it can't be deleted
+        _in_progress[fid] = (f.filename, time.time())
+    try:
+        os.makedirs(folder)
+        return _process_upload(f, ext, fid, folder)
+    except Exception as e:  # e.g. the folder was removed by hand mid-way: answer cleanly, don't leave half a folder
+        app.logger.exception("upload %s failed", fid)
+        remove_tree(folder)
+        return jsonify(error=f"The upload couldn't be processed: {e}"), 500
+    finally:
+        with _uploads_lock:
+            _in_progress.pop(fid, None)
+
+
+def _process_upload(f, ext, fid, folder):
+    name = secure_filename(f.filename) or "file"
     path = os.path.join(folder, name)
     f.save(path)
     mime = f.mimetype if f.mimetype and f.mimetype != "application/octet-stream" else (
@@ -289,17 +309,17 @@ def upload():
     tabular = filesql.available() and filesql.is_tabular(name)
     limit_mb = MAX_TABLE_UPLOAD_MB if tabular else MAX_UPLOAD_MB
     if meta["size"] > limit_mb * 1024 * 1024:
-        shutil.rmtree(folder, ignore_errors=True)
+        remove_tree(folder)
         return jsonify(error=f"File is larger than the {limit_mb} MB limit for this type ({limit_text()})."), 413
 
     if ext in ARCHIVE_EXTS:
         try:
             text, images, stats, truncated = process_zip(path, folder)
         except Exception as e:
-            shutil.rmtree(folder, ignore_errors=True)
+            remove_tree(folder)
             return jsonify(error=str(e)), 400
         if not stats["files"]:
-            shutil.rmtree(folder, ignore_errors=True)
+            remove_tree(folder)
             return jsonify(error="The zip has no files of an allowed type."), 400
         meta.update(kind="zip", mime="application/zip", images=images, stats=stats, truncated=truncated)
         with open(os.path.join(folder, "extracted.txt"), "w", encoding="utf-8") as fh:
@@ -316,7 +336,7 @@ def upload():
             except ImportError:
                 pass
             except Exception:
-                shutil.rmtree(folder, ignore_errors=True)
+                remove_tree(folder)
                 return jsonify(error="This BMP image couldn't be read."), 400
     else:
         tables = []
@@ -332,16 +352,16 @@ def upload():
             meta["tables"] = tables
         else:
             if meta["size"] > MAX_UPLOAD_MB * 1024 * 1024:
-                shutil.rmtree(folder, ignore_errors=True)
+                remove_tree(folder)
                 return jsonify(error=f"This file couldn't be read as a table, and other files are limited to "
                                      f"{MAX_UPLOAD_MB} MB. Check it's a valid CSV/TSV/Excel file."), 400
             try:
                 text = extract_text(path, name, mime)
             except Exception as e:
-                shutil.rmtree(folder, ignore_errors=True)
+                remove_tree(folder)
                 return jsonify(error=str(e)), 400
         if not text.strip():
-            shutil.rmtree(folder, ignore_errors=True)
+            remove_tree(folder)
             return jsonify(error="No readable text found in this file (scanned PDFs need OCR)."), 400
         meta["kind"] = "text"
         meta["truncated"] = len(text) > MAX_TEXT_CHARS
@@ -358,6 +378,42 @@ def upload():
 
 
 # ---------------------------------------------------------------- stored uploads (Storage panel)
+_uploads_lock = threading.Lock()
+_in_progress = {}   # file id -> (original name, start time) for uploads still being processed
+
+
+def remove_tree(folder, attempts=5):
+    """Delete a folder, retrying: on Windows, antivirus or indexing often holds new files open for a moment.
+
+    Clears read-only flags as it goes. Returns None when the folder is gone, else the last error.
+    """
+    def retry_writable(func, path, _exc):
+        try:
+            os.chmod(path, stat.S_IWRITE)
+            func(path)
+        except Exception:
+            pass
+    handler = {"onexc": retry_writable} if sys.version_info >= (3, 12) else {"onerror": retry_writable}
+    err = None
+    for i in range(attempts):
+        if not os.path.exists(folder):
+            return None
+        try:
+            shutil.rmtree(folder, **handler)
+        except Exception as e:
+            err = e
+        if not os.path.exists(folder):
+            return None
+        gc.collect()                    # release any file handles this process still holds
+        time.sleep(0.15 * 2 ** i)       # 0.15 s, 0.3 s, 0.6 s, 1.2 s
+    return err or OSError("the folder or a file in it is in use")
+
+
+def _delete_error_text(folder, err):
+    left = [os.path.relpath(os.path.join(r, n), folder) for r, _, fs in os.walk(folder) for n in fs]
+    what = f" ({', '.join(left[:3])}{'…' if len(left) > 3 else ''} still there)" if left else ""
+    return (f"Couldn't delete{what}: {err}. Another program may have it open (antivirus, search indexing, "
+            "a file manager window, or Excel); try again in a moment.")
 def _folder_bytes(folder):
     total = 0
     for root, _, files in os.walk(folder):
@@ -381,16 +437,26 @@ def list_files():
         folder = os.path.join(UPLOAD_DIR, fid)
         if not ID_RE.match(fid) or not os.path.isdir(folder):
             continue
+        with _uploads_lock:
+            busy = _in_progress.get(fid)
         disk = _folder_bytes(folder)
-        total += disk
         meta = load_meta(fid)
+        if busy:
+            total += disk
+            out.append({"id": fid, "name": busy[0], "kind": "uploading", "size": 0, "disk": disk,
+                        "uploaded": busy[1], "processing": True, "tables": []})
+            continue
+        if not meta and not any(fs for _, _, fs in os.walk(folder)) and time.time() - os.path.getmtime(folder) > 60:
+            if remove_tree(folder, attempts=1) is None:   # an empty leftover folder: nothing to show, just tidy it
+                continue
+        total += disk
         if meta:
             uploaded = meta.get("uploaded") or os.path.getmtime(os.path.join(folder, "meta.json"))
             out.append({"id": fid, "name": meta["name"], "kind": meta["kind"], "size": meta.get("size", 0),
                         "disk": disk, "uploaded": uploaded, "stats": meta.get("stats"),
                         "tables": [{"rows": t["rows"], "columns": len(t["columns"]), "sheet": t["sheet"]}
                                    for t in meta.get("tables") or []]})
-        else:  # an upload that never finished (e.g. the server stopped mid-way)
+        else:  # an upload that never finished, or a delete that couldn't remove everything
             out.append({"id": fid, "name": "(incomplete upload)", "kind": "incomplete", "size": 0, "disk": disk,
                         "uploaded": os.path.getmtime(folder), "incomplete": True, "tables": []})
     out.sort(key=lambda f: f["uploaded"], reverse=True)
@@ -398,26 +464,39 @@ def list_files():
 
 
 def delete_uploads(ids):
-    deleted, freed = [], 0
+    """Delete uploads. Already-missing ones count as deleted; ones that can't be removed are reported."""
+    deleted, failed, freed = [], [], 0
     for fid in ids:
         if not isinstance(fid, str) or not ID_RE.match(fid):
             continue
+        with _uploads_lock:
+            busy = fid in _in_progress
+        if busy:
+            failed.append({"id": fid, "error": "It's still uploading. Try again when it has finished."})
+            continue
         folder = os.path.join(UPLOAD_DIR, fid)
-        if os.path.isdir(folder):
-            size = _folder_bytes(folder)
-            shutil.rmtree(folder, ignore_errors=True)
-            if not os.path.exists(folder):
-                deleted.append(fid)
-                freed += size
-    return {"deleted": deleted, "freed": freed}
+        if not os.path.isdir(folder):
+            deleted.append(fid)
+            continue
+        size = _folder_bytes(folder)
+        err = remove_tree(folder)
+        if err is None:
+            deleted.append(fid)
+            freed += size
+        else:
+            failed.append({"id": fid, "error": _delete_error_text(folder, err)})
+            freed += size - _folder_bytes(folder)
+    return {"deleted": deleted, "failed": failed, "freed": freed}
 
 
 @app.delete("/api/files/<fid>")
 def delete_file(fid):
-    if not ID_RE.match(fid):
-        abort(404)
+    if not ID_RE.match(fid) or not os.path.isdir(os.path.join(UPLOAD_DIR, fid)):
+        return jsonify(error="That file no longer exists."), 404
     r = delete_uploads([fid])
-    return (jsonify(r), 200) if r["deleted"] else (jsonify(error="That file no longer exists."), 404)
+    if r["failed"]:
+        return jsonify(dict(r, error=r["failed"][0]["error"])), 409
+    return jsonify(r)
 
 
 @app.post("/api/files/delete")
@@ -831,6 +910,31 @@ def db_query():
     except Exception as e:
         err = str(e).strip()
         return jsonify(sql=sql, error=err, text=db.result_text(sql, error=err))
+
+
+@app.post("/api/db/export")
+def db_export():
+    """Re-run a result card's query (read-only) and return the full result as CSV, up to DB_EXPORT_MAX_ROWS."""
+    data = request.get_json(force=True) or {}
+    sql, cids = data.get("sql", ""), data.get("dbs") or []
+    try:
+        tables = file_tables(data.get("files") or [])
+        target = db.resolve_target(sql, cids, has_files=bool(tables))
+        if target == db.FILES_SOURCE:
+            res = filesql.run_query(sql, tables, db.DB_EXPORT_MAX_ROWS, db.DB_TIMEOUT_MS, full=True)
+        else:
+            res = db.run_query(sql, cids, target, max_rows=db.DB_EXPORT_MAX_ROWS, full=True)
+    except Exception as e:
+        return jsonify(error=str(e).strip()), 400
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(res["columns"])
+    w.writerows(["" if v is None else v for v in row] for row in res["rows"])
+    resp = Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8")  # BOM: Excel opens it as UTF-8
+    resp.headers["X-Row-Count"] = str(res["row_count"])
+    resp.headers["X-Truncated"] = "1" if res["truncated"] else "0"
+    resp.headers["X-Max-Rows"] = str(db.DB_EXPORT_MAX_ROWS)
+    return resp
 
 
 @app.post("/api/chat")

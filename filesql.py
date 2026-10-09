@@ -227,15 +227,16 @@ def _connect(tables):
     return con
 
 
-def _cell(v):
+def _cell(v, full=False):
+    cap = None if full else 2000
     if v is None or isinstance(v, (bool, int, str)):
-        return v[:2000] if isinstance(v, str) else v
+        return v[:cap] if isinstance(v, str) else v
     if isinstance(v, float):
         return v if v == v and abs(v) != float("inf") else str(v)
-    return str(v)[:2000]
+    return str(v)[:cap]
 
 
-def run_query(sql, tables, max_rows, timeout_ms):
+def run_query(sql, tables, max_rows, timeout_ms, full=False):
     """Run one read-only SELECT over the chat's file tables."""
     if not tables:
         raise ValueError("This chat has no attached CSV or Excel files to query.")
@@ -260,7 +261,7 @@ def run_query(sql, tables, max_rows, timeout_ms):
         con.close()
     truncated = len(rows) > max_rows
     return {"db_id": SOURCE, "db_name": SOURCE, "columns": columns,
-            "rows": [[_cell(v) for v in r] for r in rows[:max_rows]], "row_count": min(len(rows), max_rows),
+            "rows": [[_cell(v, full) for v in r] for r in rows[:max_rows]], "row_count": min(len(rows), max_rows),
             "truncated": truncated, "ms": int((time.time() - t0) * 1000)}
 
 

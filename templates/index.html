@@ -63,13 +63,19 @@ select{background:var(--bg);border:1px solid var(--line);border-radius:6px;paddi
 .msg.assistant .bubble{max-width:100%;word-wrap:break-word}
 .bubble>:first-child{margin-top:0}.bubble>:last-child{margin-bottom:0}
 .bubble pre{position:relative;background:#0d1117;color:#e6edf3;border-radius:8px;padding:14px;overflow-x:auto;font:13px/1.5 var(--mono)}
-.bubble pre:has(.copycode){padding-top:38px}
+.bubble pre:has(.codebar){padding-top:38px}
+.bubble pre code.hljs{padding:0;background:transparent}
+.dlcsv{margin-left:8px;font-size:12px;background:none;border:1px solid var(--line);border-radius:5px;padding:1px 8px;cursor:pointer;color:var(--ink)}
+.dlcsv:hover{border-color:var(--accent);color:var(--accent)}
+.dlcsv:disabled{opacity:.5;cursor:default}
 .bubble code{font-family:var(--mono);font-size:.9em}
 .bubble :not(pre)>code{background:var(--user);padding:1px 5px;border-radius:4px}
 .bubble table{border-collapse:collapse;display:block;overflow-x:auto}
 .bubble th,.bubble td{border:1px solid var(--line);padding:6px 10px}
 .bubble blockquote{border-left:3px solid var(--line);margin-left:0;padding-left:12px;color:var(--muted)}
-.copycode{position:absolute;top:6px;right:6px;font-size:12px;background:#2b333d;color:#cdd5de;border:0;border-radius:4px;padding:3px 8px;cursor:pointer}
+.codebar{position:absolute;top:6px;right:6px;display:flex;gap:6px;align-items:center}
+.copycode,.dlcode{font-size:12px;background:#2b333d;color:#cdd5de;border:0;border-radius:4px;padding:3px 8px;cursor:pointer}
+.copycode:hover,.dlcode:hover{background:#3a4552;color:#fff}
 .tools{display:flex;gap:2px;margin-top:4px;opacity:.6}
 .msg:hover .tools{opacity:1}
 .tools button{background:none;border:0;cursor:pointer;color:var(--muted);font-size:12px;padding:3px 7px;border-radius:4px}
@@ -143,7 +149,7 @@ textarea{flex:1;border:0;outline:0;resize:none;background:none;max-height:40vh;p
 #dbToggle.on{border-color:var(--accent);color:var(--ink)}
 #dbToggle.on .dot{background:var(--accent)}
 #dbToggle.bad .dot{background:var(--danger)}
-.runsql{position:absolute;top:6px;right:62px;font-size:12px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:500}
+.runsql{font-size:12px;background:var(--accent);color:var(--accent-ink);border:0;border-radius:4px;padding:3px 9px;cursor:pointer;font-weight:500}
 .runsql:disabled{opacity:.5;cursor:default}
 .msg.sql{align-items:stretch}
 .sqlcard{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;font-size:13px}
@@ -242,6 +248,7 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 .strow .use em{color:var(--muted);font-style:normal}
 .strow .del{background:none;border:0;cursor:pointer;color:var(--muted);font-size:14px;padding:4px;border-radius:6px}
 .strow .del:hover{color:var(--danger);background:var(--bg)}
+.strow .del:disabled{opacity:.3;cursor:default}
 .stempty{padding:18px;color:var(--muted);font-size:14px}
 #helpLink{display:block;padding:8px 10px;border-radius:6px;color:var(--side-ink);text-decoration:none;font-size:13px}
 #helpLink:hover{background:var(--side-hi);color:#fff}
@@ -476,14 +483,64 @@ function fallbackMd(text){   // used when the markdown library can't load (offli
     return m ? `<pre><code class="language-${e(m[1] || "text")}">${e(m[2].replace(/\n$/, ""))}</code></pre>` : e(seg).replace(/\n/g,"<br>");
   }).join("");
 }
+/* code blocks: Download picks a file name and extension from the language */
+const LANG_EXT = { python: "py", py: "py", python3: "py", javascript: "js", js: "js", node: "js", typescript: "ts", ts: "ts",
+  jsx: "jsx", tsx: "tsx", sql: "sql", pgsql: "sql", postgres: "sql", postgresql: "sql", plpgsql: "sql", duckdb: "sql",
+  csv: "csv", tsv: "tsv", json: "json", jsonl: "jsonl", html: "html", xml: "xml", svg: "svg", css: "css", scss: "scss",
+  bash: "sh", sh: "sh", shell: "sh", zsh: "sh", console: "sh", powershell: "ps1", ps1: "ps1", pwsh: "ps1", bat: "bat",
+  batch: "bat", cmd: "bat", yaml: "yaml", yml: "yaml", toml: "toml", ini: "ini", markdown: "md", md: "md", c: "c", h: "h",
+  cpp: "cpp", "c++": "cpp", cc: "cpp", csharp: "cs", cs: "cs", "c#": "cs", java: "java", go: "go", golang: "go",
+  rust: "rs", rs: "rs", ruby: "rb", rb: "rb", php: "php", kotlin: "kt", swift: "swift", r: "R", matlab: "m",
+  vba: "bas", vb: "vb", lua: "lua", perl: "pl", dart: "dart", scala: "scala", arduino: "ino", ino: "ino",
+  verilog: "v", vhdl: "vhd", diff: "diff", patch: "patch", text: "txt", txt: "txt", plaintext: "txt", "": "txt" };
+const FILE_NAME = /^[\w][\w.-]*\.[A-Za-z][A-Za-z0-9]{0,7}$/;
+function codeLang(code){ const m = (code.className || "").match(/language-([\w+#.-]+)/); return m ? m[1].toLowerCase() : ""; }
+function codeExt(lang){ return lang in LANG_EXT ? LANG_EXT[lang] : /^[a-z0-9]{1,6}$/.test(lang) ? lang : "txt"; }
+function codeFileName(code, pre){   // a name the reply gives the file, or null
+  const lang = codeLang(code), ext = codeExt(lang);
+  // 1) the first line names the file: "# file: report.py", "// save as app.js", "-- totals.sql"
+  const first = (code.textContent.split("\n")[0] || "").trim();
+  const m = first.match(/^(?:#|\/\/|--|;|%|\/\*|<!--|REM\s)\s*(?:(?:file(?:\s*name)?|filename|save(?: this)? as|name)\s*[:=]?\s*)?([\w][\w.-]*\.[A-Za-z][A-Za-z0-9]{0,7})\s*(?:\*\/|-->)?$/i);
+  if (m) return m[1];
+  // 2) the text just above the block names a file of the same type in `code`, e.g. "Save this as `report.py`:"
+  const prev = pre.previousElementSibling;
+  if (prev && !prev.matches("pre")) {
+    const named = [...prev.querySelectorAll("code")].map(c => c.textContent.trim())
+      .filter(t => FILE_NAME.test(t) && (ext === "txt" || t.toLowerCase().endsWith("." + ext.toLowerCase())));
+    if (named.length) return named[named.length - 1];
+  }
+  if (lang === "dockerfile") return "Dockerfile";
+  if (lang === "makefile" || lang === "make") return "Makefile";
+  return null;
+}
+function downloadCode(code, name){
+  let text = code.textContent; if (!text.endsWith("\n")) text += "\n";
+  const type = name.endsWith(".csv") ? "text/csv" : name.endsWith(".json") ? "application/json" : name.endsWith(".html") ? "text/html" : "text/plain";
+  download(name, (type === "text/csv" ? "\ufeff" : "") + text, type + ";charset=utf-8");
+}
+function codeBar(pre){
+  let bar = pre.querySelector(".codebar");
+  if (!bar) { bar = document.createElement("div"); bar.className = "codebar"; pre.appendChild(bar); }
+  return bar;
+}
 function decorate(el){
   el.querySelectorAll("pre code").forEach(c => { if (window.hljs) hljs.highlightElement(c); });
+  const seen = {};
   el.querySelectorAll("pre").forEach(pre => {
     if (pre.querySelector(".copycode")) return;
-    const b = document.createElement("button");
-    b.className = "copycode"; b.textContent = "Copy";
-    b.onclick = () => { navigator.clipboard.writeText(pre.querySelector("code")?.innerText || pre.innerText); b.textContent = "Copied"; setTimeout(()=>b.textContent="Copy",1200); };
-    pre.appendChild(b);
+    const code = pre.querySelector("code") || pre;
+    let name = codeFileName(code, pre);
+    if (!name) {   // unnamed: chat title + extension, numbered per type within the reply
+      const ext = codeExt(codeLang(code)); seen[ext] = (seen[ext] || 0) + 1;
+      name = `${slug(cur()?.title || "pgpeek")}${seen[ext] > 1 ? "-" + seen[ext] : ""}.${ext}`;
+    }
+    const bar = codeBar(pre);
+    const d = document.createElement("button"); d.className = "dlcode"; d.type = "button"; d.textContent = "Download";
+    d.title = "Download as " + name; d.setAttribute("aria-label", "Download as " + name);
+    d.onclick = () => downloadCode(code, name);
+    const b = document.createElement("button"); b.className = "copycode"; b.type = "button"; b.textContent = "Copy";
+    b.onclick = () => { navigator.clipboard.writeText(code.innerText || pre.innerText); b.textContent = "Copied"; setTimeout(()=>b.textContent="Copy",1200); };
+    bar.append(d, b);
   });
 }
 
@@ -595,6 +652,12 @@ function sqlCard(r){
   const meta = r.error ? "Failed" : `${r.row_count}${r.truncated ? "+" : ""} row${r.row_count === 1 && !r.truncated ? "" : "s"} · ${r.ms} ms`;
   card.innerHTML = `<div class="sqlhead"><b>Query result</b>${r.db_name ? `<span style="color:var(--muted)">· ${esc(r.db_name)}</span>` : ""}<small>${esc(meta)}</small></div><details><summary>SQL</summary><pre><code></code></pre></details>`;
   card.querySelector("code").textContent = r.sql;
+  if (!r.error && r.columns?.length) {
+    const dl = document.createElement("button"); dl.className = "dlcsv"; dl.type = "button"; dl.textContent = "Download CSV";
+    dl.title = "Run the query again and download the full result (not just the rows shown here)";
+    dl.onclick = () => downloadResult(r, dl);
+    card.querySelector(".sqlhead").appendChild(dl);
+  }
   if (r.error) {
     const e = document.createElement("div"); e.className = "sqlerr"; e.textContent = r.error; card.appendChild(e);
   } else if (r.columns?.length) {
@@ -612,6 +675,23 @@ function sqlCard(r){
   } else { const n = document.createElement("div"); n.className = "sqlnote"; n.textContent = "No columns returned."; card.appendChild(n); }
   return card;
 }
+async function downloadResult(r, btn){
+  const c = cur(); if (!c) return;
+  btn.disabled = true; btn.textContent = "Preparing…";
+  try {
+    const res = await fetch("/api/db/export", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql: r.sql, dbs: chatDbs(c), files: chatFileIds(c) }) });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || `Server returned ${res.status}`); }
+    const blob = await res.blob(), rows = +res.headers.get("X-Row-Count") || 0;
+    const url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = `${slug(c.title)}${r.db_name ? "-" + slug(r.db_name) : ""}-result.csv`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+    notify(res.headers.get("X-Truncated") === "1"
+      ? `Downloaded the first ${rows.toLocaleString()} rows (the download limit, DB_EXPORT_MAX_ROWS). Add a filter or aggregate for the rest.`
+      : `Downloaded ${rows.toLocaleString()} row${rows === 1 ? "" : "s"}.`, res.headers.get("X-Truncated") === "1");
+  } catch (e) { notify("Couldn't download the result: " + e.message, true); }
+  finally { btn.disabled = false; btn.textContent = "Download CSV"; }
+}
 function toCSV(r){
   const q = v => v === null ? "" : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g,'""')}"` : String(v);
   return [r.columns, ...(r.rows || [])].map(row => row.map(q).join(",")).join("\n");
@@ -624,9 +704,9 @@ function addRunButtons(bubble){
   if (!canQuery()) return;
   sqlBlocks(bubble).forEach(code => {
     const pre = code.closest("pre"); if (pre.querySelector(".runsql")) return;
-    const b = document.createElement("button"); b.className = "runsql"; b.textContent = "Run";
+    const b = document.createElement("button"); b.className = "runsql"; b.type = "button"; b.textContent = "Run";
     b.onclick = () => { if (controller) return; b.disabled = true; b.textContent = "Running…"; runAndSend([code.innerText.trim()]); };
-    pre.appendChild(b);
+    codeBar(pre).prepend(b);
   });
 }
 
@@ -1209,9 +1289,17 @@ async function serverDelete(ids){   // delete uploads on the server and take the
   if (!ids.length) return { deleted: [], freed: 0 };
   const r = await api("/api/files/delete", { method: "POST", body: JSON.stringify({ ids }) });
   if (r.error) { notify("Couldn't delete files: " + r.error, true); return null; }
+  r.failed ||= [];
   r.deleted.forEach(id => { state.chats.forEach(c => detach(c, id)); delete fileIndex[id]; });
   save(); render();
   return r;
+}
+function deleteSummary(r, okText){   // one toast for the outcome, errors first
+  if (r.failed.length) {
+    const name = id => fileIndex[id]?.name || stFiles.find(f => f.id === id)?.name || "a file";
+    notify(`${r.failed.length === 1 ? `${name(r.failed[0].id)} wasn't deleted` : `${r.failed.length} files weren't deleted`}. ${r.failed[0].error}` +
+           (r.deleted.length ? ` (${r.deleted.length} other${r.deleted.length > 1 ? "s were" : " was"} deleted.)` : ""), true);
+  } else notify(okText);
 }
 async function removeAttachment(c, a){
   if (!c) return;
@@ -1228,7 +1316,7 @@ async function removeAttachment(c, a){
   detach(c, a.id); save(); render();
   if (r.checked) {
     const d = await serverDelete([a.id]);
-    if (d) notify(`Removed ${a.name} and deleted it from the server (${fmtSize(d.freed)} freed).`);
+    if (d) deleteSummary(d, `Removed ${a.name} and deleted it from the server (${fmtSize(d.freed)} freed).`);
   } else notify(`Removed ${a.name} from this chat.`);
 }
 async function deleteChats(chats){
@@ -1252,7 +1340,7 @@ async function deleteChats(chats){
   const what = one ? "Chat deleted" : `${chats.length} chats deleted`;
   if (r.checked) {
     const d = await serverDelete(own);
-    if (d) notify(`${what}, with ${d.deleted.length} file${d.deleted.length === 1 ? "" : "s"} (${fmtSize(d.freed)} freed).`);
+    if (d) deleteSummary(d, `${what}, with ${d.deleted.length} file${d.deleted.length === 1 ? "" : "s"} (${fmtSize(d.freed)} freed).`);
   } else notify(what + ".");
 }
 
@@ -1263,10 +1351,12 @@ function openChat(id){ if (controller) return; state.current = id; save(); rende
 function renderStorage(){
   const filter = $("#stFilter").value, list = $("#stList");
   const rows = stFiles.map(f => ({ ...f, chats: state.chats.filter(c => usesFile(c, f.id)) }))
-                      .filter(f => filter === "all" || !f.chats.length);
+                      .filter(f => filter === "all" || (!f.chats.length && !f.processing));
   stSel = new Set([...stSel].filter(id => stFiles.some(f => f.id === id)));
-  const total = stFiles.reduce((n, f) => n + f.disk, 0), unused = stFiles.filter(f => !state.chats.some(c => usesFile(c, f.id)));
-  $("#stSummary").textContent = `${stFiles.length} file${stFiles.length === 1 ? "" : "s"} · ${fmtSize(total)} on disk · ${unused.length} unused (${fmtSize(unused.reduce((n, f) => n + f.disk, 0))})`;
+  const total = stFiles.reduce((n, f) => n + f.disk, 0), unused = stFiles.filter(f => !f.processing && !state.chats.some(c => usesFile(c, f.id)));
+  const busy = stFiles.filter(f => f.processing).length;
+  $("#stSummary").textContent = `${stFiles.length} file${stFiles.length === 1 ? "" : "s"} · ${fmtSize(total)} on disk · ${unused.length} unused (${fmtSize(unused.reduce((n, f) => n + f.disk, 0))})` +
+    (busy ? ` · ${busy} still uploading` : "");
   $("#stDeleteUnused").disabled = !unused.length;
   $("#stDeleteSel").disabled = !stSel.size;
   $("#stDeleteSel").textContent = stSel.size ? `Delete selected (${stSel.size})` : "Delete selected";
@@ -1274,21 +1364,23 @@ function renderStorage(){
   if (!rows.length) { list.innerHTML = `<div class="stempty">${stFiles.length ? "No unused files." : "No uploaded files on the server."}</div>`; return; }
   const head = document.createElement("div"); head.className = "strow head";
   head.innerHTML = `<input type="checkbox" aria-label="Select all shown"><span>File</span><span class="num">On disk</span><span class="dt">Uploaded</span><span class="use">Used in</span><span></span>`;
-  const all = head.querySelector("input"); all.checked = rows.every(f => stSel.has(f.id));
-  all.onchange = () => { rows.forEach(f => all.checked ? stSel.add(f.id) : stSel.delete(f.id)); renderStorage(); };
+  const pickable = rows.filter(f => !f.processing);
+  const all = head.querySelector("input"); all.checked = pickable.length > 0 && pickable.every(f => stSel.has(f.id));
+  all.onchange = () => { pickable.forEach(f => all.checked ? stSel.add(f.id) : stSel.delete(f.id)); renderStorage(); };
   list.appendChild(head);
   rows.forEach(f => {
     const r = document.createElement("div"); r.className = "strow";
-    const kind = f.incomplete ? "incomplete upload" : f.tables?.length ? tableNote(f).replace(/^ · /, "") : f.kind === "zip" ? `zip${f.stats ? ", " + f.stats.files + " files" : ""}` : f.kind;
+    const kind = f.processing ? "still uploading…" : f.incomplete ? "leftover from an interrupted upload or delete" : f.tables?.length ? tableNote(f).replace(/^ · /, "") : f.kind === "zip" ? `zip${f.stats ? ", " + f.stats.files + " files" : ""}` : f.kind;
     r.innerHTML = `<input type="checkbox"><span class="nm"><b></b><small></small></span><span class="num"></span><span class="dt"></span><span class="use"></span><button class="del" title="Delete" aria-label="Delete">🗑</button>`;
     const cb = r.querySelector("input"); cb.checked = stSel.has(f.id); cb.setAttribute("aria-label", "Select " + f.name);
     cb.onchange = () => { cb.checked ? stSel.add(f.id) : stSel.delete(f.id); renderStorage(); };
     r.querySelector("b").textContent = f.name; r.querySelector("b").title = f.name;
-    r.querySelector("small").textContent = `${kind} · ${fmtSize(f.size)} original`;
+    r.querySelector("small").textContent = f.processing || f.incomplete ? kind : `${kind} · ${fmtSize(f.size)} original`;
     r.querySelector(".num").textContent = fmtSize(f.disk);
     r.querySelector(".dt").textContent = new Date(f.uploaded * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
     const use = r.querySelector(".use");
-    if (!f.chats.length) use.innerHTML = "<em>Not used here</em>";
+    if (f.processing) { use.innerHTML = "<em>—</em>"; cb.disabled = true; r.querySelector(".del").disabled = true; r.querySelector(".del").title = "Still uploading"; }
+    else if (!f.chats.length) use.innerHTML = "<em>Not used here</em>";
     f.chats.forEach(c => { const b = document.createElement("button"); b.textContent = c.title || "New chat"; b.title = "Open this chat"; b.onclick = () => openChat(c.id); use.appendChild(b); });
     r.querySelector(".del").onclick = () => storageDelete([f.id]);
     list.appendChild(r);
@@ -1307,9 +1399,10 @@ async function storageDelete(ids){
   const d = await serverDelete(ids);
   if (!d) return;
   stSel = new Set([...stSel].filter(id => !d.deleted.includes(id)));
-  stFiles = stFiles.filter(f => !d.deleted.includes(f.id));
+  deleteSummary(d, `Deleted ${d.deleted.length} file${d.deleted.length === 1 ? "" : "s"} (${fmtSize(d.freed)} freed).`);
+  const fresh = await loadFileIndex();   // show what's really on the server now
+  stFiles = fresh.error ? stFiles.filter(f => !d.deleted.includes(f.id)) : fresh.files;
   renderStorage();
-  notify(`Deleted ${d.deleted.length} file${d.deleted.length === 1 ? "" : "s"} (${fmtSize(d.freed)} freed).`);
 }
 async function openStorage(){
   stSel = new Set(); $("#stList").innerHTML = `<div class="stempty">Loading…</div>`; $("#stSummary").textContent = "Loading…";
@@ -1322,7 +1415,7 @@ $("#openStorage").onclick = openStorage;
 $("#stClose").onclick = () => stDlg.close();
 $("#stFilter").onchange = renderStorage;
 $("#stDeleteSel").onclick = () => storageDelete([...stSel]);
-$("#stDeleteUnused").onclick = () => storageDelete(stFiles.filter(f => !state.chats.some(c => usesFile(c, f.id))).map(f => f.id));
+$("#stDeleteUnused").onclick = () => storageDelete(stFiles.filter(f => !f.processing && !state.chats.some(c => usesFile(c, f.id))).map(f => f.id));
 
 /* ---------- export / import ---------- */
 const EXPORT_FORMAT = "pgpeek-chats";

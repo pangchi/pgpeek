@@ -1,6 +1,6 @@
 # pgPeek
 
-**Version 1.0.0** · [Changelog](CHANGELOG.md)
+**Version 1.1.0** · [Changelog](CHANGELOG.md)
 
 Ask questions about your PostgreSQL databases in plain language. pgPeek is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
@@ -104,7 +104,9 @@ The model answers data questions by writing SQL in a ` ```sql ` block:
 
 - **Run** appears on each SQL block. The result appears as a table card and is sent back to the model, which answers from it, or reads the error and fixes the query.
 - **Auto-run** (Settings) runs every SQL block in a reply as soon as it finishes. It stops after 5 query rounds in a row without you typing, so a model stuck retrying can't loop forever.
-- Result cards offer **Copy CSV** and **Run again**. The browser keeps up to 100 rows per result for display; the model receives up to `DB_MAX_ROWS` rows, capped at `DB_RESULT_CHARS` characters.
+- Result cards offer **Download CSV**, **Copy CSV** and **Run again**. The browser keeps up to 100 rows per result for display; the model receives up to `DB_MAX_ROWS` rows, capped at `DB_RESULT_CHARS` characters.
+- **Download CSV** re-runs the card's query on the server, with the same read-only checks and timeout, and downloads the **whole** result up to `DB_EXPORT_MAX_ROWS` (default 100,000 rows), with long values kept in full. The file starts with a UTF-8 byte-order mark so Excel opens accents correctly. If the limit cuts the result off, a message says how many rows you got. Because it runs the query again, the file reflects the data at download time. **Copy CSV** copies only the rows shown on the card.
+- **Code in replies**: every code block has **Download** next to **Copy**. The file gets the extension of the block's language (`.py`, `.csv`, `.sql`, `.js`, `.json`, `.sh`, `.ps1`, `.html` and many more; `.txt` if none). If the reply names the file, on the block's first line (`# file: report.py`, `// save as app.js`, `-- totals.sql`) or in `code` text just above it (*Save this as `summary.csv`:*), that name is used; otherwise it's named after the chat, numbered when a reply has several unnamed blocks of the same type. Hover over **Download** to see the name.
 
 **Several databases in one chat**: the model starts each query with `-- db: <name>`, and the result card shows which database it ran on. A query can only use one database, so to combine data the model runs one query per database and combines the results itself. If it leaves out the line, or names a database that isn't ticked, it's told which names to use and tries again.
 
@@ -241,7 +243,9 @@ Uploads are kept on the server in `uploads/<id>/` (the original file, plus `tabl
 - The summary shows the total on disk and how much is used by files no chat here refers to; the filter shows only those.
 - Delete one file (🗑), tick several and **Delete selected**, or **Delete all unused**.
 - Deleting a file that chats here still use also removes it from those chats (as above).
-- Uploads that never finished (for example, the server stopped mid-upload) appear as *(incomplete upload)* so they can be cleaned up.
+- Uploads still being processed (a big CSV or Excel file loading) show as *still uploading…* and can't be selected or deleted until they finish; **Delete all unused** skips them.
+- Folders left by an upload that never finished, or by a delete that couldn't remove everything, show as *(incomplete upload)* so they can be deleted. Completely empty ones older than a minute are removed automatically when Storage opens.
+- **If a delete fails**, pgPeek retries for a few seconds and then says which file wasn't deleted, what's still there, and why. On Windows this is usually another program holding a file open: antivirus scanning a new file, search indexing, a File Explorer window in that folder, or the file open in Excel. Close it, or wait a moment, and delete again. Nothing is silently left behind.
 
 **What "used" means**: chats live in each browser, so pgPeek only knows about the chats in the browser you're using. On a shared server, a file marked *Not used here* may be in someone else's chats, or in an exported chat file. Imported chats whose files were deleted show them as unavailable, and the model is told the file is missing. The HTML export embeds images, so it doesn't depend on files staying on the server.
 
@@ -312,6 +316,7 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | `DATABASE_LABEL` / `DATABASE_CONTEXT` | none | Name and notes for the `DATABASE_URL` connection |
 | `DB_SCHEMAS` | `public` | Default schemas the model sees; each connection can override |
 | `DB_MAX_ROWS` | `200` | Rows returned per query |
+| `DB_EXPORT_MAX_ROWS` | `100000` | Most rows **Download CSV** on a result card saves |
 | `DB_TIMEOUT_MS` | `15000` | Per-query timeout |
 | `DB_SCHEMA_CHARS` | `20000` | Max schema size sent per database |
 | `DB_RESULT_CHARS` | `20000` | Max size of each result sent to the model |
@@ -362,6 +367,8 @@ Settings go in `.env` (see `.env.example`). Restart `python app.py` after changi
 | *Connected to SSH, but the SSH server couldn't reach the database* | The database host/port are wrong as seen from the SSH server (often `localhost:5432`), or port forwarding is disabled. |
 | *SSH host key … has CHANGED* | If the server was rebuilt, delete its line from `ssh_known_hosts`. Otherwise, don't connect. |
 | *Can't decrypt saved connection* | `secret.key` or `APP_SECRET_KEY` changed. Restore the original key, or edit the connection and re-enter its passwords. |
+| *… wasn't deleted … being used by another process* | Another program has the file open (antivirus, search indexing, File Explorer, Excel). Wait a moment or close it, then delete again from **Storage**. |
+| *(incomplete upload)* in Storage | A leftover from an interrupted upload or a delete that couldn't finish. Delete it; if that fails, the message says which file is still in use. |
 | Disk filling up with uploads | Open **Storage** and use **Delete all unused**, or delete old chats with their files. See [Removing files and freeing space](#removing-files-and-freeing-space). |
 | Chats missing after reopening pgPeek | Check the address matches the one you used before (`localhost` vs `127.0.0.1` vs an IP), and that you're not in a private window. Restore from an exported JSON file with **Import chats**. |
 | *Couldn't save chats: the browser's storage is full* | Export your chats, then delete old ones. |
@@ -407,7 +414,7 @@ All responses are JSON unless noted.
 - `POST /api/upload` — multipart field `file`; returns `{id, name, mime, size, kind, truncated, stats, tables}` (`kind` is `image`, `text` or `zip`; `tables` lists `{rows, columns, sheet}` for CSV/TSV/Excel files loaded as SQL tables), or `{error}` with status 400/413
 - `GET /files/<id>` — the original file
 - `GET /api/files` — every upload: `{files: [{id, name, kind, size, disk, uploaded, tables, stats}], total_disk}`; `disk` includes the table; unfinished uploads have `incomplete: true`
-- `DELETE /api/files/<id>` — delete one upload (404 if it's gone); `POST /api/files/delete` with `{ids}` deletes several → `{deleted, freed}` (bytes)
+- `DELETE /api/files/<id>` — delete one upload (404 if it's gone, 409 with `{error}` if it can't be deleted); `POST /api/files/delete` with `{ids}` deletes several → `{deleted, failed: [{id, error}], freed}` (bytes). Uploads still in progress (`processing: true` in the list) are refused; ids already gone count as deleted
 
 **Help and version**
 
@@ -421,6 +428,7 @@ All responses are JSON unless noted.
 - `GET /api/db/connections/<id>/status` — tests the connection
 - `GET /api/db/connections/<id>/schema[?refresh=1]` — `{text, tables}`
 - `GET /api/fs/keys[?path=]` — one folder for the key picker: `{path, root, parent, dirs: [{name, path}], files: [{name, path, size, kind}], user, host}`, where `kind` is `private`, `public`, `ppk`, `other` or `unreadable`. 403 outside `KEY_BROWSE_ROOT` or when it's `off`.
+- `POST /api/db/export` — same body as `/api/db/query`; returns the full result as `text/csv` (UTF-8 with BOM), up to `DB_EXPORT_MAX_ROWS`, with headers `X-Row-Count`, `X-Truncated` (`1` if cut off) and `X-Max-Rows`; `{error}` with 400 on failure
 - `POST /api/db/query` — `{sql, dbs, files}` (`files`: the chat's attachment ids in message order; CSV/Excel ones become the `files` source) → `{db_id, db_name, columns, rows, row_count, truncated, ms, text}` or `{error, text}`; `text` is what the model receives
 
 ## Running in production
@@ -435,7 +443,7 @@ All responses are JSON unless noted.
 
 pgPeek uses `MAJOR.MINOR.PATCH` version numbers: PATCH for fixes, MINOR for new features, MAJOR for changes that break existing setups (settings, saved data or the API). The number lives in `version.py`, and [CHANGELOG.md](CHANGELOG.md) lists what each version changed.
 
-**Which version am I running?** It's at the bottom of the sidebar and on the Help page, printed when the server starts (` * pgPeek 1.0.0`), and returned by `/api/version`. Chat exports record the version that made them (`app_version` in JSON, the header line in HTML).
+**Which version am I running?** It's at the bottom of the sidebar and on the Help page, printed when the server starts (` * pgPeek <version>`), and returned by `/api/version`. Chat exports record the version that made them (`app_version` in JSON, the header line in HTML).
 
 **Updating**:
 

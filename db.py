@@ -32,6 +32,7 @@ except ImportError:  # optional dependency
     psycopg = None
 
 DB_MAX_ROWS = int(os.getenv("DB_MAX_ROWS", 200))
+DB_EXPORT_MAX_ROWS = int(os.getenv("DB_EXPORT_MAX_ROWS", 100000))   # "Download CSV" on result cards
 DB_TIMEOUT_MS = int(os.getenv("DB_TIMEOUT_MS", 15000))
 DB_SCHEMAS = os.getenv("DB_SCHEMAS", "public")
 DB_SCHEMA_CHARS = int(os.getenv("DB_SCHEMA_CHARS", 20000))
@@ -343,15 +344,17 @@ def check_sql(sql):
     return sql.strip().rstrip(";").strip()
 
 
-def _cell(v):
+def _cell(v, full=False):
+    """A value for JSON/CSV. Long text is cut to 2000 characters unless full=True (CSV downloads)."""
+    cap = None if full else 2000
     if v is None or isinstance(v, (bool, int, str)):
-        return v[:2000] if isinstance(v, str) else v
+        return v[:cap] if isinstance(v, str) else v
     if isinstance(v, float):
         return v if math.isfinite(v) else str(v)
     if isinstance(v, (bytes, bytearray, memoryview)):
         b = bytes(v)
-        return "\\x" + b[:100].hex() + ("..." if len(b) > 100 else "")
-    return str(v)[:2000]
+        return "\\x" + (b.hex() if full else b[:100].hex() + ("..." if len(b) > 100 else ""))
+    return str(v)[:cap]
 
 
 def resolve_target(sql, cids, has_files=False):
@@ -384,8 +387,9 @@ def resolve_target(sql, cids, has_files=False):
                      f"using one of: {', '.join(names)}.")
 
 
-def run_query(sql, cids, c=None):
+def run_query(sql, cids, c=None, max_rows=None, full=False):
     """Run one read-only query on the right connection. Returns columns, rows (capped) and timing."""
+    max_rows = max_rows or DB_MAX_ROWS
     c = c or resolve_target(sql, cids)
     sql = check_sql(sql)
     t0 = time.time()
@@ -397,12 +401,12 @@ def run_query(sql, cids, c=None):
                 columns, rows = [], []
             else:
                 columns = [d.name for d in cur.description]
-                rows = cur.fetchmany(DB_MAX_ROWS + 1)
+                rows = cur.fetchmany(max_rows + 1)
     finally:
         conn.rollback()
         conn.close()
-    truncated = len(rows) > DB_MAX_ROWS
-    rows = [[_cell(v) for v in r] for r in rows[:DB_MAX_ROWS]]
+    truncated = len(rows) > max_rows
+    rows = [[_cell(v, full) for v in r] for r in rows[:max_rows]]
     return {"db_id": c["id"], "db_name": c["name"], "columns": columns, "rows": rows, "row_count": len(rows),
             "truncated": truncated, "ms": int((time.time() - t0) * 1000)}
 

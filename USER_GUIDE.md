@@ -56,6 +56,7 @@ Type your question and press Enter. The answer appears word by word.
 Under each message:
 
 - **Copy** copies the text.
+- Code in an answer (Python, SQL, CSV, scripts and so on) has **Download** and **Copy** buttons in its top-right corner. **Download** saves it as a file with the right ending (`.py`, `.csv`, `.sql`…). If the answer names the file, for example *"save this as `report.py`"*, that name is used; hover over **Download** to see it. Tip: ask *"give me this as a CSV"* or *"write a Python script for this"* to get a file you can download.
 - **Edit** (your messages) opens the message for editing. Change it, then press **Ctrl+Enter** (⌘+Enter on a Mac) or **Save & send**. Press **Esc** to cancel. Saving replaces that message and everything after it; the editor tells you how many messages that is.
 - **Regenerate** (the last answer) asks for a fresh answer to the same question.
 
@@ -72,14 +73,15 @@ When a chat has a database or data file, the AI answers data questions by writin
 On a result card:
 
 - **SQL** (click to expand) shows the exact query.
-- **Copy CSV** copies the result for pasting into Excel.
+- **Download CSV** saves the **complete** result as a CSV file that opens in Excel. The card shows at most 100 rows, but the download includes every row (up to 100,000) because it runs the query again.
+- **Copy CSV** copies the rows shown on the card, for pasting into Excel.
 - **Run again** re-runs the query, for example after the data has changed.
 
 Queries can only **read** data. pgPeek blocks anything that would change or delete it, so you can't damage the data by asking a question.
 
 **Choosing data sources**: click the database chip and tick the databases this chat may use. New chats start with your last choice. To check what the AI can see, ask *"What tables do you have access to?"*
 
-At most 200 rows come back from one query, so ask for summaries (totals, averages, top 10, counts by month) rather than *"show me every order"*.
+At most 200 rows come back to the AI from one query, so ask for summaries (totals, averages, top 10, counts by month) rather than *"show me every order"*. If you need every row, use **Download CSV** on the result card.
 
 ## Attaching files
 
@@ -209,6 +211,10 @@ Only attach files and connect data you're allowed to send to the AI provider you
 **The AI's number looks wrong.** Expand **SQL** on the result card to see what it calculated, then tell it what to change, such as *"exclude test boards"* or *"use order_date, not ship_date"*.
 
 **A file shows "(unavailable)".** It was deleted from the server, or the chat was imported from another pgPeek. Attach the file again.
+
+**Storage shows "(incomplete upload)" or "still uploading…".** *Still uploading…* means a big file is still being loaded; wait for it to finish (it can't be deleted until then). *(incomplete upload)* is a leftover from an upload or delete that was interrupted; just delete it.
+
+**A file won't delete.** pgPeek tries for a few seconds, then tells you which file is still there and why. Usually another program has it open: antivirus checking a new file, a File Explorer window, or Excel. Wait a moment or close that program, then delete it again from **Storage**.
 
 **Where did a file I removed go?** If you ticked *Also delete it from the server*, it's gone. Otherwise it's still in **Storage**, where you can delete it later.
 

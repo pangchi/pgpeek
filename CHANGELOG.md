@@ -1,12 +1,30 @@
 # Changelog
 
-All notable changes to pgPeek. Versions follow `MAJOR.MINOR.PATCH`:
+All notable changes to Datasquint (called pgPeek up to 1.4.0). Versions follow `MAJOR.MINOR.PATCH`:
 
 - **PATCH** (1.0.**1**) for fixes,
 - **MINOR** (1.**1**.0) for new features,
 - **MAJOR** (**2**.0.0) for changes that break existing setups, such as settings, saved data or the API.
 
 The version is set in `version.py`. It's shown at the bottom of the sidebar and on the Help page, returned by `/api/version`, and recorded in chat exports.
+
+## 2.0.0 — 2026-10-10
+
+### Changed
+- **Renamed from pgPeek to Datasquint**, since it now works with CSV and Excel files as well as PostgreSQL. The app folder is now `datasquint`, releases are `datasquint-<version>.zip`, and exports are named `datasquint-chats-<date>.json`.
+
+### Action needed
+- Unzip into a new `datasquint` folder and copy over `.env`, `connections.sqlite`, `secret.key`, `ssh_known_hosts` and `uploads/` from the `pgpeek` folder. See [Upgrading from pgPeek](README.md#upgrading-from-pgpeek-db-helper-or-flask-chat).
+
+### Carried over automatically
+- Chats and the colour theme move from the pgPeek browser storage (`pgpeek.v1`, `pgpeek.theme`) to `datasquint.v1` and `datasquint.theme` on first load, at the same address.
+- pgPeek chat exports import unchanged.
+
+## 1.4.0 — 2026-10-10
+
+### Added
+- **`FILE_TABLES` switch in `.env`** to allow or disallow loading CSV, TSV and Excel files into DuckDB. `1` (default) keeps today's behaviour: large files up to `MAX_TABLE_UPLOAD_MB` (200 MB) that the model queries with SQL. `0` turns it off: those files are read as text like any other document, limited to `MAX_UPLOAD_MB` (20 MB). Files already loaded as tables are then sent to the model as their first lines only.
+- Startup prints whether SQL over files is on, and why if it's off.
 
 ## 1.3.0 — 2026-10-09
 

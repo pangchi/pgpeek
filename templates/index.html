@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>pgPeek</title>
+<title>Datasquint</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
@@ -12,7 +12,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script>
 /* colour theme: applied before the page draws so it doesn't flash */
-try { const t = JSON.parse(localStorage.getItem("pgpeek.theme") || "{}"), r = document.documentElement;
+try { const old = localStorage.getItem("pgpeek.theme");   // saved under the old name (pgPeek): move it once
+  if (old !== null) { if (!localStorage.getItem("datasquint.theme")) localStorage.setItem("datasquint.theme", old); localStorage.removeItem("pgpeek.theme"); } } catch (e) {}
+try { const t = JSON.parse(localStorage.getItem("datasquint.theme") || "{}"), r = document.documentElement;
   if (t.mode === "light" || t.mode === "dark") r.dataset.mode = t.mode;
   if (t.accent && t.accent !== "teal") r.dataset.accent = t.accent; } catch (e) {}
 </script>
@@ -329,7 +331,7 @@ dialog textarea{min-height:110px;resize:vertical}
     <button id="openStorage"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M5 13l2.5-8h9L19 13M6 17h.01M10 17h.01"/></svg> Storage</button>
     <button id="clearAll"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6M10 11v6M14 11v6"/></svg> Delete all chats</button>
     <a id="helpLink" href="/guide" target="_blank" rel="noopener"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 015.8 1c0 2-3 3-3 3M12 17h.01"/></svg> Help</a>
-    <div id="appVersion" title="pgPeek version">pgPeek {{ version }}</div>
+    <div id="appVersion" title="Datasquint version">Datasquint {{ version }}</div>
   </div>
 </aside>
 
@@ -490,12 +492,16 @@ dialog textarea{min-height:110px;resize:vertical}
 <script>
 const $ = s => document.querySelector(s);
 const APP_VERSION = {{ version|tojson }};
-const STORE = "pgpeek.v1";
-const OLD_STORES = ["dbhelper.v1", "flaskchat.v1"];   // earlier names (DB Helper, flask-chat); migrated once on first load
-try { if (!localStorage.getItem(STORE)) {
-  const old = OLD_STORES.find(k => localStorage.getItem(k));
-  if (old) localStorage.setItem(STORE, localStorage.getItem(old));
-} OLD_STORES.forEach(k => localStorage.removeItem(k)); } catch {}
+const STORE = "datasquint.v1";
+const OLD_STORES = ["pgpeek.v1", "dbhelper.v1", "flaskchat.v1"];   // earlier names (pgPeek, DB Helper, flask-chat); migrated once on first load
+// Move chats from an earlier name, once. Copy when there's nothing here yet (or only an empty list),
+// and remove an old key only once its chats are safely here, so nothing is ever thrown away.
+try {
+  const count = k => { try { return JSON.parse(localStorage.getItem(k))?.chats?.length || 0; } catch { return 0; } };
+  const old = OLD_STORES.find(k => count(k) > 0);
+  if (old && count(STORE) === 0) localStorage.setItem(STORE, localStorage.getItem(old));
+  OLD_STORES.forEach(k => { if (count(k) === 0 || localStorage.getItem(k) === localStorage.getItem(STORE)) localStorage.removeItem(k); });
+} catch {}
 const ICON_SEND = '<path d="M12 19V5M5 12l7-7 7 7"/>';
 const ICON_STOP = '<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor"/>';
 
@@ -579,7 +585,7 @@ function decorate(el){
     let name = codeFileName(code, pre);
     if (!name) {   // unnamed: chat title + extension, numbered per type within the reply
       const ext = codeExt(codeLang(code)); seen[ext] = (seen[ext] || 0) + 1;
-      name = `${slug(cur()?.title || "pgpeek")}${seen[ext] > 1 ? "-" + seen[ext] : ""}.${ext}`;
+      name = `${slug(cur()?.title || "datasquint")}${seen[ext] > 1 ? "-" + seen[ext] : ""}.${ext}`;
     }
     const bar = codeBar(pre);
     const d = document.createElement("button"); d.className = "dlcode"; d.type = "button"; d.textContent = "Download";
@@ -810,7 +816,7 @@ function render(){
   $("#exportBtn").disabled = !c?.messages.length;
   if (!c || !c.messages.length) {
     box.style.height = "100%";
-    box.innerHTML = `<div class="empty"><div><h1>pgPeek</h1><div>Ask about your data, or attach files to get started.</div></div></div>`;
+    box.innerHTML = `<div class="empty"><div><h1>Datasquint</h1><div>Ask about your data, or attach files to get started.</div></div></div>`;
     return;
   }
   box.style.height = "";
@@ -1465,7 +1471,7 @@ $("#stDeleteSel").onclick = () => storageDelete([...stSel]);
 $("#stDeleteUnused").onclick = () => storageDelete(stFiles.filter(f => !f.processing && !state.chats.some(c => usesFile(c, f.id))).map(f => f.id));
 
 /* ---------- export / import ---------- */
-const EXPORT_FORMAT = "pgpeek-chats";
+const EXPORT_FORMAT = "datasquint-chats";
 let toastTimer = null;
 function notify(text, isErr){
   const t = $("#toast"); if (!t) return;
@@ -1537,7 +1543,7 @@ async function importChats(file){
   try { data = JSON.parse(await file.text()); }
   catch { notify(`${file.name} isn't a valid JSON file.`, true); return; }
   const list = Array.isArray(data) ? data : Array.isArray(data?.chats) ? data.chats : data?.messages ? [data] : null;
-  if (!list) { notify(`${file.name} doesn't contain pgPeek chats.`, true); return; }
+  if (!list) { notify(`${file.name} doesn't contain Datasquint chats.`, true); return; }
   const before = state.chats.slice(), beforeCurrent = state.current;
   let added = 0, same = 0, bad = 0;
   const incoming = [];
@@ -1646,9 +1652,9 @@ async function chatHTML(c){
   const when = new Date().toLocaleString();
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(c.title || "Chat")} – pgPeek</title><style>${EXPORT_CSS}</style></head>
+<title>${esc(c.title || "Chat")} – Datasquint</title><style>${EXPORT_CSS}</style></head>
 <body><main><header><h1>${esc(c.title || "Chat")}</h1>
-<div class="meta">Exported from pgPeek ${esc(APP_VERSION)} on ${esc(when)}${dbs.length ? ` · Database${dbs.length > 1 ? "s" : ""}: ${esc(dbs.join(", "))}` : ""}</div></header>
+<div class="meta">Exported from Datasquint ${esc(APP_VERSION)} on ${esc(when)}${dbs.length ? ` · Database${dbs.length > 1 ? "s" : ""}: ${esc(dbs.join(", "))}` : ""}</div></header>
 ${parts.join("\n")}
 <footer>${plural(c.messages.filter(m => m.kind !== "sql").length, "message")} · ${plural(c.messages.filter(m => m.kind === "sql").length, "query result")}</footer>
 </main></body></html>`;
@@ -1675,7 +1681,7 @@ $("#expJson").onclick = () => {
 $("#exportAll").onclick = () => {
   const chats = state.chats.filter(c => c.messages.length);
   if (!chats.length) { notify("There are no chats to export yet.", true); return; }
-  exportJSON(chats, `pgpeek-chats-${today()}.json`);
+  exportJSON(chats, `datasquint-chats-${today()}.json`);
   notify(`Exported ${chats.length} chat${chats.length > 1 ? "s" : ""}.`);
 };
 $("#importBtn").onclick = () => $("#importFile").click();
@@ -1683,10 +1689,10 @@ $("#importFile").onchange = e => { const f = e.target.files[0]; e.target.value =
 
 /* ---------- settings ---------- */
 const dlg = $("#settings");
-/* ---------- colour theme (per browser, localStorage "pgpeek.theme") ---------- */
+/* ---------- colour theme (per browser, localStorage "datasquint.theme") ---------- */
 const THEMES = {teal:{name:"Teal",light:"#2f6f8f",dark:"#5ba3c6"},blue:{name:"Blue",light:"#2f5fb3",dark:"#7aa2ea"},violet:{name:"Violet",light:"#6a4fb3",dark:"#a890ec"},green:{name:"Green",light:"#2f7d55",dark:"#62c08d"},amber:{name:"Amber",light:"#9c5a14",dark:"#e2a356"},rose:{name:"Rose",light:"#b03a5b",dark:"#ea7f9c"},graphite:{name:"Graphite",light:"#4a5563",dark:"#a9b3bf"}};
 function loadTheme(){
-  try { const t = JSON.parse(localStorage.getItem("pgpeek.theme") || "{}");
+  try { const t = JSON.parse(localStorage.getItem("datasquint.theme") || "{}");
     return { mode: ["light","dark"].includes(t.mode) ? t.mode : "system", accent: THEMES[t.accent] ? t.accent : "teal" }; }
   catch (e) { return { mode: "system", accent: "teal" }; }
 }
@@ -1700,7 +1706,7 @@ function applyTheme(t){
 }
 function saveTheme(t){
   // the colours go along so the Help page can match without its own copy of the palette
-  try { localStorage.setItem("pgpeek.theme", JSON.stringify({ ...t, light: THEMES[t.accent].light, dark: THEMES[t.accent].dark })); } catch (e) {}
+  try { localStorage.setItem("datasquint.theme", JSON.stringify({ ...t, light: THEMES[t.accent].light, dark: THEMES[t.accent].dark })); } catch (e) {}
 }
 let theme = loadTheme(), themeDraft = null;
 applyTheme(theme);

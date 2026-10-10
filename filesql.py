@@ -37,8 +37,24 @@ MEMORY_LIMIT = os.getenv("FILES_SQL_MEMORY", "1GB")
 EXCEL_READER = os.getenv("EXCEL_READER", "calamine").strip().lower()
 
 
-def available():
+# FILE_TABLES=0 turns SQL over attached CSV/TSV/Excel off: those files are then read as text,
+# under the normal MAX_UPLOAD_MB limit, like any other document.
+ENABLED = os.getenv("FILE_TABLES", "1").strip().lower() not in ("0", "false", "no", "off")
+
+
+def installed():
     return duckdb is not None
+
+
+def available():
+    """True when attached CSV/TSV/Excel become SQL tables: DuckDB installed and FILE_TABLES on."""
+    return installed() and ENABLED
+
+
+def status():
+    if not installed():
+        return "off (DuckDB isn't installed: pip install duckdb)"
+    return "on" if ENABLED else "off (FILE_TABLES=0)"
 
 
 def is_tabular(name):

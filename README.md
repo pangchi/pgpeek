@@ -1,8 +1,8 @@
-# pgPeek
+# Datasquint
 
-**Version 1.3.0** · [Changelog](CHANGELOG.md)
+**Version 2.0.0** · [Changelog](CHANGELOG.md)
 
-Ask questions about your PostgreSQL databases in plain language. pgPeek is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
+Ask questions about your PostgreSQL databases and your CSV and Excel files in plain language. Datasquint is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
 - **Databases**: save any number of PostgreSQL connections, direct or through SSH, and choose which ones each chat can use. Queries are strictly read-only.
 - **Files**: images, PDF, Word, Excel, CSV, JSON, text, code and zip archives. Attached CSV, TSV and Excel files become SQL tables, so totals and comparisons are computed exactly, not estimated.
@@ -11,7 +11,7 @@ Ask questions about your PostgreSQL databases in plain language. pgPeek is a Cha
 - **Keep your chats**: chats are saved in your browser between sessions; export them as JSON backups to move or restore, or as a standalone HTML page to read, print or share.
 - **Tidy storage**: remove files from a chat, delete a chat together with its files, and see and clean up everything uploaded in the **Storage** panel.
 
-**New to pgPeek?** The [user guide](USER_GUIDE.md) explains everyday use without the technical detail. It's also built into the app: click **Help** in the sidebar, or open `/guide`. This README covers installation, configuration and how things work.
+**New to Datasquint?** The [user guide](USER_GUIDE.md) explains everyday use without the technical detail. It's also built into the app: click **Help** in the sidebar, or open `/guide`. This README covers installation, configuration and how things work.
 
 ## Contents
 
@@ -29,7 +29,7 @@ Ask questions about your PostgreSQL databases in plain language. pgPeek is a Cha
 - [API](#api)
 - [Running in production](#running-in-production)
 - [Versions and updating](#versions-and-updating)
-- [Upgrading from DB Helper or flask-chat](#upgrading-from-db-helper-or-flask-chat)
+- [Upgrading from pgPeek, DB Helper or flask-chat](#upgrading-from-pgpeek-db-helper-or-flask-chat)
 
 ## Quick start
 
@@ -49,7 +49,7 @@ Open http://127.0.0.1:5000, then:
 
 To skip pressing Run, turn on **Settings → Run the model's SQL queries automatically**.
 
-**Colour theme**: **Settings → Appearance** picks System (follows your computer's light or dark mode), Light or Dark, and **Colour** picks one of seven colours: Teal (the default), Blue, Violet, Green, Amber, Rose or Graphite. Choices preview as you click and apply on **Save**; Cancel puts the old theme back. The theme is kept per browser (local storage key `pgpeek.theme`), and the Help page follows it.
+**Colour theme**: **Settings → Appearance** picks System (follows your computer's light or dark mode), Light or Dark, and **Colour** picks one of seven colours: Teal (the default), Blue, Violet, Green, Amber, Rose or Graphite. Choices preview as you click and apply on **Save**; Cancel puts the old theme back. The theme is kept per browser (local storage key `datasquint.theme`), and the Help page follows it.
 
 **Typing and editing messages**: Enter sends and Shift+Enter starts a new line; the message box grows to 40% of the window, then scrolls. **Edit** under any of your messages opens it in place, with its line breaks, in a box that grows to 60% of the window. There, Enter adds a new line, **Ctrl+Enter** (⌘+Enter on Mac) or **Save & send** resends it, and **Esc** or **Cancel** leaves it unchanged. Saving replaces that message and everything after it (the editor says how many messages that is), and keeps the message's attachments.
 
@@ -81,11 +81,11 @@ Open **Database** in the sidebar (or **Manage connections…** in the database m
 
 ### Connecting over SSH
 
-Tick **Connect through SSH** and fill in the SSH host, port and user. pgPeek opens the SSH connection and forwards PostgreSQL through it itself, like `ssh -L`, so there's no separate tunnel to keep running.
+Tick **Connect through SSH** and fill in the SSH host, port and user. Datasquint opens the SSH connection and forwards PostgreSQL through it itself, like `ssh -L`, so there's no separate tunnel to keep running.
 
 - **The database host and port are as seen from the SSH server.** If PostgreSQL runs on the SSH machine, use `localhost` and `5432`. If it sits behind a bastion, use its private address, such as `10.0.1.20`.
-- **Sign in with**: a password; a key file on the machine running pgPeek (not the computer with your browser), typed or picked with **Browse…**; a pasted private key; or ssh-agent / `~/.ssh` default keys. Ed25519, ECDSA and RSA keys are supported; encrypted keys need their passphrase. PuTTY `.ppk` keys must be exported to OpenSSH format first.
-- **Browse…** (next to the key path) lists folders and files on the machine running pgPeek, starting in `~/.ssh`. Private keys are marked; click one to fill in the path. Public keys and PuTTY `.ppk` keys are shown but can't be picked, with a hint on what to use instead; tick **Show all files** to see everything. The picker header shows which machine and user it's browsing as.
+- **Sign in with**: a password; a key file on the machine running Datasquint (not the computer with your browser), typed or picked with **Browse…**; a pasted private key; or ssh-agent / `~/.ssh` default keys. Ed25519, ECDSA and RSA keys are supported; encrypted keys need their passphrase. PuTTY `.ppk` keys must be exported to OpenSSH format first.
+- **Browse…** (next to the key path) lists folders and files on the machine running Datasquint, starting in `~/.ssh`. Private keys are marked; click one to fill in the path. Public keys and PuTTY `.ppk` keys are shown but can't be picked, with a hint on what to use instead; tick **Show all files** to see everything. The picker header shows which machine and user it's browsing as.
 - Each connection gets its own tunnel. Tunnels are kept alive and reopen automatically if they drop.
 - Connecting reports which step failed: SSH server unreachable, SSH login, database unreachable from the SSH server, or database login.
 - The SSH server must allow port forwarding (`AllowTcpForwarding yes`, which is the default).
@@ -141,12 +141,12 @@ Every query passes through four independent checks in `db.py`:
 These were tested against PostgreSQL 16, including attempts to slip writes through. Even so, **connect with a role that can only read.** It's the one guarantee that doesn't depend on this code, and it controls which tables the model can see:
 
 ```sql
-CREATE ROLE pgpeek_reader LOGIN PASSWORD 'change-me';
-GRANT CONNECT ON DATABASE mydb TO pgpeek_reader;
-GRANT USAGE ON SCHEMA public TO pgpeek_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO pgpeek_reader;     -- or list specific tables
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO pgpeek_reader;
-ALTER ROLE pgpeek_reader SET default_transaction_read_only = on;
+CREATE ROLE datasquint_reader LOGIN PASSWORD 'change-me';
+GRANT CONNECT ON DATABASE mydb TO datasquint_reader;
+GRANT USAGE ON SCHEMA public TO datasquint_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO datasquint_reader;     -- or list specific tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO datasquint_reader;
+ALTER ROLE datasquint_reader SET default_transaction_read_only = on;
 ```
 
 ### Saved passwords
@@ -159,7 +159,7 @@ Connections are stored in `connections.sqlite`. Database passwords, SSH password
 ### What leaves your machine
 
 - **Query results and attached files are sent to the model provider** at `OPENAI_BASE_URL`, like any other message. Only connect data you're allowed to send there, or use a self-hosted model.
-- **Anyone who can open pgPeek can query your databases, read uploaded files, and delete uploads** (Storage panel or `/api/files`). It has no login. Keep `HOST=127.0.0.1` (the default), or put it behind authentication before exposing it.
+- **Anyone who can open Datasquint can query your databases, read uploaded files, and delete uploads** (Storage panel or `/api/files`). It has no login. Keep `HOST=127.0.0.1` (the default), or put it behind authentication before exposing it.
 - **The key file picker shows file names in the folder it may browse** (`KEY_BROWSE_ROOT`, default the app user's home). It never sends file contents to the browser, only names, sizes and a key type read from each file's first bytes. Paths outside that folder, including through `..` or symlinks, are refused. Set `KEY_BROWSE_ROOT=off` to disable it, or point it at a narrower folder such as `~/.ssh`.
 - The API key stays on the server; the browser never sees it.
 
@@ -192,7 +192,7 @@ The zip is opened on the server. The model receives a listing of included and sk
 
 ## Querying CSV and Excel files
 
-Drop one or more CSV, TSV or Excel files into a chat (or pick several with the paperclip) and ask about them. Each file, and each sheet of an Excel file, becomes a table the model can query with SQL, the same way it queries your databases: it writes a query, you press **Run** (or auto-run does), pgPeek computes the result and the model answers from it. Totals, counts, averages, rankings and joins across files are computed exactly over every row, instead of the model estimating from text. Requires `duckdb`.
+Drop one or more CSV, TSV or Excel files into a chat (or pick several with the paperclip) and ask about them. Each file, and each sheet of an Excel file, becomes a table the model can query with SQL, the same way it queries your databases: it writes a query, you press **Run** (or auto-run does), Datasquint computes the result and the model answers from it. Totals, counts, averages, rankings and joins across files are computed exactly over every row, instead of the model estimating from text. Requires `duckdb`.
 
 **What happens on upload**
 
@@ -225,6 +225,8 @@ Excel is slower because each sheet is converted to CSV first. With `python-calam
 
 Disk use per file is the original (kept so it can be opened from the chat) plus the table, which is usually much smaller than the source.
 
+**Turning it off**: set `FILE_TABLES=0` in `.env` and restart to stop CSV/TSV/Excel being loaded into DuckDB (and so disallow large ones); see [Configuration](#configuration).
+
 **Limits**: CSV/TSV/Excel up to `MAX_TABLE_UPLOAD_MB` (200 MB), other files up to `MAX_UPLOAD_MB` (20 MB). A CSV that can't be read as a table falls back to text, and then the 20 MB limit applies. Excel allows about a million rows per sheet; bigger data needs several sheets or a CSV. CSV and Excel files inside a zip are sent as text, not tables; attach them directly to query them. Excel formulas give their last saved values (see [Attaching files](#attaching-files)).
 
 ## Removing files and freeing space
@@ -247,9 +249,9 @@ Uploads are kept on the server in `uploads/<id>/` (the original file, plus `tabl
 - Deleting a file that chats here still use also removes it from those chats (as above).
 - Uploads still being processed (a big CSV or Excel file loading) show as *still uploading…* and can't be selected or deleted until they finish; **Delete all unused** skips them.
 - Folders left by an upload that never finished, or by a delete that couldn't remove everything, show as *(incomplete upload)* so they can be deleted. Completely empty ones older than a minute are removed automatically when Storage opens.
-- **If a delete fails**, pgPeek retries for a few seconds and then says which file wasn't deleted, what's still there, and why. On Windows this is usually another program holding a file open: antivirus scanning a new file, search indexing, a File Explorer window in that folder, or the file open in Excel. Close it, or wait a moment, and delete again. Nothing is silently left behind.
+- **If a delete fails**, Datasquint retries for a few seconds and then says which file wasn't deleted, what's still there, and why. On Windows this is usually another program holding a file open: antivirus scanning a new file, search indexing, a File Explorer window in that folder, or the file open in Excel. Close it, or wait a moment, and delete again. Nothing is silently left behind.
 
-**What "used" means**: chats live in each browser, so pgPeek only knows about the chats in the browser you're using. On a shared server, a file marked *Not used here* may be in someone else's chats, or in an exported chat file. Imported chats whose files were deleted show them as unavailable, and the model is told the file is missing. The HTML export embeds images, so it doesn't depend on files staying on the server.
+**What "used" means**: chats live in each browser, so Datasquint only knows about the chats in the browser you're using. On a shared server, a file marked *Not used here* may be in someone else's chats, or in an exported chat file. Imported chats whose files were deleted show them as unavailable, and the model is told the file is missing. The HTML export embeds images, so it doesn't depend on files staying on the server.
 
 Deleting is permanent. There's no recycle bin.
 
@@ -269,7 +271,7 @@ Trade-offs: an N-part send costs N + 1 or more requests; the answer works from n
 
 ### Where chats are kept
 
-Every chat is saved automatically in your browser's local storage as you go. Close pgPeek, come back the next day, pick the chat in the sidebar and keep typing: the model gets the whole earlier conversation, and the chat keeps its ticked databases and attachments.
+Every chat is saved automatically in your browser's local storage as you go. Close Datasquint, come back the next day, pick the chat in the sidebar and keep typing: the model gets the whole earlier conversation, and the chat keeps its ticked databases and attachments.
 
 Chats stay in the browser that created them, at that exact address. `http://localhost:5000`, `http://127.0.0.1:5000` and `http://192.168.1.20:5000` each count as a separate site with separate chats. Private/incognito windows, "clear site data when closing" settings and browser cleaners remove them. Use export to keep a copy that doesn't depend on any of this.
 
@@ -277,9 +279,9 @@ Chats stay in the browser that created them, at that exact address. `http://loca
 
 | Where | Option | What you get |
 |---|---|---|
-| Sidebar | **Export all chats** | `pgpeek-chats-<date>.json` with every chat. A backup you can import later, here or in another browser or PC. |
+| Sidebar | **Export all chats** | `datasquint-chats-<date>.json` with every chat. A backup you can import later, here or in another browser or PC. |
 | Download icon, top right | **Download as JSON** | The current chat only, in the same format. |
-| Download icon, top right | **Download as HTML** | The current chat as one self-contained web page: formatted replies, SQL result tables, attached images embedded, the databases used, and the export date. Opens in any browser without pgPeek, prints cleanly, follows light/dark mode, and contains no scripts. |
+| Download icon, top right | **Download as HTML** | The current chat as one self-contained web page: formatted replies, SQL result tables, attached images embedded, the databases used, and the export date. Opens in any browser without Datasquint, prints cleanly, follows light/dark mode, and contains no scripts. |
 
 The export icon is greyed out until the current chat has messages, and exporting waits until a reply has finished.
 
@@ -290,7 +292,7 @@ The export icon is greyed out until the current chat has messages, and exporting
 - Imported chats go to the top of the sidebar, and the first one opens.
 - A chat that's already here with identical messages is skipped; one with the same id but different messages is added as a copy titled "… (imported)", so nothing is overwritten.
 - **Databases are reconnected by name.** The export records each chat's database names, so on another PC they're matched to saved connections with the same name (case-insensitive). Chats whose databases aren't found just start with no database ticked.
-- **Attachments are references to files in `uploads/` on the server**, not copies. Imported into the same pgPeek they work as before; on a different server they show as unavailable and the model is told the file is missing. The HTML export is the way to keep attached images with a chat.
+- **Attachments are references to files in `uploads/` on the server**, not copies. Imported into the same Datasquint they work as before; on a different server they show as unavailable and the model is told the file is missing. The HTML export is the way to keep attached images with a chat.
 - Files are checked before anything is saved: invalid JSON, files with no chats, unknown fields and malformed attachment ids are rejected or dropped. Message content is displayed as text or sanitised markdown, exactly like normal chats.
 - If the browser's storage is full, the import is undone and a message says so. Browsers allow roughly 5–10 MB per site; export and delete old chats to make room.
 
@@ -338,6 +340,7 @@ Settings go in `.env` (see `env.example`). Restart `python app.py` after changin
 | Variable | Default | Notes |
 |---|---|---|
 | `MAX_UPLOAD_MB` | `20` | Per-file upload limit |
+| `FILE_TABLES` | `1` | `1` loads CSV/TSV/Excel into DuckDB as SQL tables, allowing large files up to `MAX_TABLE_UPLOAD_MB`. `0` turns this off: those files are read as text like other documents, limited to `MAX_UPLOAD_MB`, and the model can't query them with SQL. Files loaded as tables earlier then reach the model as their first lines only. Startup prints which is in effect. |
 | `MAX_TABLE_UPLOAD_MB` | `200` | Per-file limit for CSV/TSV/Excel loaded as SQL tables (needs `duckdb`; otherwise `MAX_UPLOAD_MB` applies) |
 | `EXCEL_READER` | `calamine` | `calamine` (fast, ~1 GB per million-row sheet) or `openpyxl` (slow, low memory) |
 | `MAX_TEXT_CHARS` | `400000` | Text kept per file or zip |
@@ -364,7 +367,7 @@ Settings go in `.env` (see `env.example`). Restart `python app.py` after changin
 | Message | What to do |
 |---|---|
 | *Request failed … context length* | The request is larger than the model accepts. Lower `MAX_SEND_CHARS`, or start a new chat. |
-| *SSH key file not found* | The path must exist on the machine running pgPeek, readable by the account it runs as. Use **Browse…** to pick it, or **Paste private key**. |
+| *SSH key file not found* | The path must exist on the machine running Datasquint, readable by the account it runs as. Use **Browse…** to pick it, or **Paste private key**. |
 | *Browsing is limited to …* | The key is outside `KEY_BROWSE_ROOT`. Type its path instead, or widen `KEY_BROWSE_ROOT`. |
 | *Connected to SSH, but the SSH server couldn't reach the database* | The database host/port are wrong as seen from the SSH server (often `localhost:5432`), or port forwarding is disabled. |
 | *SSH host key … has CHANGED* | If the server was rebuilt, delete its line from `ssh_known_hosts`. Otherwise, don't connect. |
@@ -372,7 +375,7 @@ Settings go in `.env` (see `env.example`). Restart `python app.py` after changin
 | *… wasn't deleted … being used by another process* | Another program has the file open (antivirus, search indexing, File Explorer, Excel). Wait a moment or close it, then delete again from **Storage**. |
 | *(incomplete upload)* in Storage | A leftover from an interrupted upload or a delete that couldn't finish. Delete it; if that fails, the message says which file is still in use. |
 | Disk filling up with uploads | Open **Storage** and use **Delete all unused**, or delete old chats with their files. See [Removing files and freeing space](#removing-files-and-freeing-space). |
-| Chats missing after reopening pgPeek | Check the address matches the one you used before (`localhost` vs `127.0.0.1` vs an IP), and that you're not in a private window. Restore from an exported JSON file with **Import chats**. |
+| Chats missing after reopening Datasquint | Check the address matches the one you used before (`localhost` vs `127.0.0.1` vs an IP), and that you're not in a private window. Restore from an exported JSON file with **Import chats**. |
 | *Couldn't save chats: the browser's storage is full* | Export your chats, then delete old ones. |
 | Chip is red / "Database off" | Click it to tick databases or check which one is unreachable. |
 | The model says it has no database access | The database isn't ticked for this chat. |
@@ -445,22 +448,33 @@ All responses are JSON unless noted.
 
 ## Versions and updating
 
-pgPeek uses `MAJOR.MINOR.PATCH` version numbers: PATCH for fixes, MINOR for new features, MAJOR for changes that break existing setups (settings, saved data or the API). The number lives in `version.py`, and [CHANGELOG.md](CHANGELOG.md) lists what each version changed.
+Datasquint uses `MAJOR.MINOR.PATCH` version numbers: PATCH for fixes, MINOR for new features, MAJOR for changes that break existing setups (settings, saved data or the API). The number lives in `version.py`, and [CHANGELOG.md](CHANGELOG.md) lists what each version changed.
 
-**Which version am I running?** It's at the bottom of the sidebar and on the Help page, printed when the server starts (` * pgPeek <version>`), and returned by `/api/version`. Chat exports record the version that made them (`app_version` in JSON, the header line in HTML).
+**Which version am I running?** It's at the bottom of the sidebar and on the Help page, printed when the server starts (` * Datasquint <version>`), and returned by `/api/version`. Chat exports record the version that made them (`app_version` in JSON, the header line in HTML).
 
 **Updating**:
 
 1. Check [CHANGELOG.md](CHANGELOG.md) for anything marked as needing action.
-2. Stop pgPeek, then unzip the new `pgpeek-<version>.zip` over your `pgpeek` folder. Your `.env`, `connections.sqlite`, `secret.key`, `ssh_known_hosts` and `uploads/` aren't in the zip, so they're kept.
+2. Stop Datasquint, then unzip the new `datasquint-<version>.zip` over your `datasquint` folder. Your `.env`, `connections.sqlite`, `secret.key`, `ssh_known_hosts` and `uploads/` aren't in the zip, so they're kept.
 3. Run `pip install -r requirements.txt` in case dependencies changed.
-4. Start pgPeek again, and reload the page in the browser. A running server keeps serving the old page until it's restarted.
+4. Start Datasquint again, and reload the page in the browser. A running server keeps serving the old page until it's restarted.
 
-## Upgrading from DB Helper or flask-chat
+## Upgrading from pgPeek, DB Helper or flask-chat
 
-pgPeek was previously called DB Helper, and before that flask-chat.
+Datasquint was called pgPeek until version 1.4.0, before that DB Helper, and before that flask-chat. It was renamed because it now works with files as well as PostgreSQL.
 
-- **Chats carry over automatically.** They're moved to the new storage name the first time you open pgPeek in the same browser at the same address.
-- **Saved connections carry over** if you copy `connections.sqlite` and `secret.key` from the DB Helper folder into the `pgpeek` folder. Copy both, or the saved passwords can't be decrypted.
+**From pgPeek** (nothing is lost, but the folder name changes):
+
+1. Stop pgPeek.
+2. Unzip `datasquint-<version>.zip` next to your `pgpeek` folder. It creates a new `datasquint` folder.
+3. Copy these from `pgpeek` into `datasquint`: `.env`, `connections.sqlite` and `secret.key` (both, or saved passwords can't be decrypted), `ssh_known_hosts` if you use SSH, and the `uploads` folder so attached files keep working.
+4. Run `python app.py` from the `datasquint` folder and open the same address as before (for example `http://127.0.0.1:5000`).
+
+Chats and the colour theme move to the new name automatically the first time you open Datasquint in the same browser at the same address. Exports from pgPeek import as they are. Once everything looks right, delete the `pgpeek` folder. If you created a `pgpeek_reader` role from the SQL above, it keeps working; the new name in that example is only a suggestion.
+
+**From DB Helper or flask-chat**:
+
+- **Chats carry over automatically.** They're moved to the new storage name the first time you open Datasquint in the same browser at the same address.
+- **Saved connections carry over** if you copy `connections.sqlite` and `secret.key` from the DB Helper folder into the `datasquint` folder. Copy both, or the saved passwords can't be decrypted.
 - **Re-add database connections made in flask-chat's dialog.** That version only kept them in memory. `DATABASE_URL` connections keep working unchanged.
 - Copy your `.env` (and `ssh_known_hosts`, if you use SSH) into the new folder.

@@ -1,5 +1,5 @@
 """
-pgPeek: chat with your PostgreSQL databases and files using any OpenAI-compatible model.
+Datasquint: chat with your PostgreSQL databases and files using any OpenAI-compatible model.
 
 Configure with environment variables (or a .env file):
     OPENAI_API_KEY   - API key
@@ -8,6 +8,7 @@ Configure with environment variables (or a .env file):
     SYSTEM_PROMPT    - optional default system prompt
     UPLOAD_DIR       - where uploaded files are stored (default ./uploads)
     MAX_UPLOAD_MB    - per-file upload limit (default 20)
+    FILE_TABLES      - 1 (default) loads CSV/TSV/Excel into DuckDB as SQL tables; 0 reads them as text instead
     MAX_TABLE_UPLOAD_MB - per-file limit for CSV/TSV/Excel loaded as SQL tables (default 200)
     MAX_TEXT_CHARS   - max characters of text sent per file or zip (default 400000, ~100k tokens)
     MAX_SEND_CHARS   - max characters per request; larger sends are split into parts (default 100000)
@@ -508,10 +509,10 @@ def delete_files():
 # ---------------------------------------------------------------- user guide (Help link)
 GUIDE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "USER_GUIDE.md")
 GUIDE_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>pgPeek user guide</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Datasquint user guide</title>
 <script>
 // same colour theme as the app (saved by Settings in this browser)
-try { const t = JSON.parse(localStorage.getItem("pgpeek.theme") || "{}"), r = document.documentElement, ok = c => /^#[0-9a-f]{6}$/i.test(c || "");
+try { const t = JSON.parse(localStorage.getItem("datasquint.theme") || localStorage.getItem("pgpeek.theme") || "{}"), r = document.documentElement, ok = c => /^#[0-9a-f]{6}$/i.test(c || "");
   if (t.mode === "light" || t.mode === "dark") r.dataset.mode = t.mode;
   if (ok(t.light)) r.style.setProperty("--accent-l", t.light);
   if (ok(t.dark)) r.style.setProperty("--accent-d", t.dark); } catch (e) {}
@@ -533,7 +534,7 @@ blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--accent);ba
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 </head><body><main id="doc">Loading…</main>
-<footer style="max-width:820px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px">pgPeek __VERSION__</footer>
+<footer style="max-width:820px;margin:0 auto;padding:0 20px 40px;color:var(--muted);font-size:13px">Datasquint __VERSION__</footer>
 <script>
 fetch("guide.md").then(r => r.text()).then(text => {
   const doc = document.getElementById("doc");
@@ -583,7 +584,7 @@ def chat_file_ids(raw):
 
 
 def file_tables(ids):
-    """Chat-level file tables (empty if DuckDB isn't installed)."""
+    """Chat-level file tables (empty if DuckDB isn't installed or FILE_TABLES=0)."""
     if not filesql.available():
         return []
     return filesql.chat_tables([i for i in ids if isinstance(i, str)], load_meta, UPLOAD_DIR)
@@ -617,6 +618,8 @@ def collect_attachments(msg, ftables=None):
         elif ftables and ftables.get(fid):
             label = meta["name"] + " (preview)"
             body = filesql.preview(body, ftables[fid])
+        elif meta.get("tables"):   # loaded as a table earlier, but SQL over files is now turned off
+            label = meta["name"] + " (first lines only)"
         else:
             label = meta["name"] + (" (truncated)" if meta.get("truncated") else "")
         docs.append((label, body))
@@ -726,7 +729,7 @@ def index():
 
 @app.get("/api/version")
 def version():
-    return jsonify(name="pgPeek", version=VERSION)
+    return jsonify(name="Datasquint", version=VERSION)
 
 
 @app.get("/api/config")
@@ -994,7 +997,9 @@ if __name__ == "__main__":
     # Debug mode is off by default: its in-browser debugger can run code, and its auto-reloader would
     # restart the server whenever a .zip lands in uploads/. FLASK_DEBUG=1 turns it on for development.
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
-    print(f" * pgPeek {VERSION}")
+    print(f" * Datasquint {VERSION}")
+    print(f" * SQL over CSV/TSV/Excel files: {filesql.status()}"
+          + (f", up to {MAX_TABLE_UPLOAD_MB} MB per file" if filesql.available() else f"; those files are read as text, up to {MAX_UPLOAD_MB} MB"))
     app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 5000)), debug=debug, threaded=True,
             # watchdog matches patterns per path segment, so list each depth under uploads/
             exclude_patterns=[os.path.join(UPLOAD_DIR, *["*"] * n) for n in (1, 2, 3)] + ["*.sqlite", "*.duckdb"]

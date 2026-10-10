@@ -1,6 +1,6 @@
-# pgPeek user guide
+# Datasquint user guide
 
-pgPeek lets you ask questions about your company's data in plain English. It works with databases your administrator has connected and with CSV and Excel files you attach yourself. You type a question, the AI writes a database query, pgPeek runs it, and the AI answers from the real numbers.
+Datasquint lets you ask questions about your company's data in plain English. It works with databases your administrator has connected and with CSV and Excel files you attach yourself. You type a question, the AI writes a database query, Datasquint runs it, and the AI answers from the real numbers.
 
 This guide covers everyday use. For installation and settings, see the README.
 
@@ -33,7 +33,7 @@ This guide covers everyday use. For installation and settings, see the README.
 | **Storage** | See every uploaded file and delete the ones you no longer need. |
 | **Delete all chats** | Clears your chat list, optionally with the files in it. |
 | **Help** | Opens this guide. |
-| Version | The pgPeek version, shown at the very bottom (for example *pgPeek 1.0.0*). Mention it when reporting a problem. |
+| Version | The Datasquint version, shown at the very bottom (for example *Datasquint 1.0.0*). Mention it when reporting a problem. |
 
 The panel button at the top left of the main area hides or shows the sidebar.
 
@@ -77,7 +77,7 @@ On a result card:
 - **Copy CSV** copies the rows shown on the card, for pasting into Excel.
 - **Run again** re-runs the query, for example after the data has changed.
 
-Queries can only **read** data. pgPeek blocks anything that would change or delete it, so you can't damage the data by asking a question.
+Queries can only **read** data. Datasquint blocks anything that would change or delete it, so you can't damage the data by asking a question.
 
 **Choosing data sources**: click the database chip and tick the databases this chat may use. New chats start with your last choice. To check what the AI can see, ask *"What tables do you have access to?"*
 
@@ -122,7 +122,7 @@ Good to know:
 
 ## Removing files and freeing space
 
-Uploaded files are stored on the pgPeek server until someone deletes them, and a big CSV can take 200 MB or more. There are three ways to clean up.
+Uploaded files are stored on the Datasquint server until someone deletes them, and a big CSV can take 200 MB or more. There are three ways to clean up.
 
 **Remove a file from a chat.** Hover over a file in a message you've sent and click its **✕**. You'll be asked to confirm:
 
@@ -141,22 +141,22 @@ Uploaded files are stored on the pgPeek server until someone deletes them, and a
 
 Deleting a file that chats still use removes it from those chats too. Deleting can't be undone.
 
-> **Shared server?** "Used in" only knows about chats in *your* browser. If colleagues use the same pgPeek, a file marked *Not used here* may be in their chats. Check before using **Delete all unused**.
+> **Shared server?** "Used in" only knows about chats in *your* browser. If colleagues use the same Datasquint, a file marked *Not used here* may be in their chats. Check before using **Delete all unused**.
 
 ## Saving, exporting and importing chats
 
-Chats are saved automatically in your browser. Close pgPeek, come back tomorrow, click the chat and carry on.
+Chats are saved automatically in your browser. Close Datasquint, come back tomorrow, click the chat and carry on.
 
-They're tied to **this browser on this computer, at this exact address**. Opening pgPeek at a different address (for example `localhost` instead of `127.0.0.1`), in a private window, or after clearing browsing data shows an empty list. Export regularly to keep a copy.
+They're tied to **this browser on this computer, at this exact address**. Opening Datasquint at a different address (for example `localhost` instead of `127.0.0.1`), in a private window, or after clearing browsing data shows an empty list. Export regularly to keep a copy.
 
 **Export** (download icon, top right, for the current chat):
 
-- **Download as HTML**: a page anyone can open in a browser without pgPeek. It includes the answers, result tables and attached images, and is good for sharing or printing.
+- **Download as HTML**: a page anyone can open in a browser without Datasquint. It includes the answers, result tables and attached images, and is good for sharing or printing.
 - **Download as JSON**: a backup you can import later.
 
 **Export all chats** (sidebar) saves every chat to one JSON file.
 
-**Import chats** (sidebar) loads a JSON export. Chats you already have are skipped, so nothing is overwritten. Databases reconnect by name. Attached files only work if they're still on the pgPeek server.
+**Import chats** (sidebar) loads a JSON export. Chats you already have are skipped, so nothing is overwritten. Databases reconnect by name. Attached files only work if they're still on the Datasquint server.
 
 ## Database connections
 
@@ -194,7 +194,7 @@ Appearance and colour are remembered in this browser only, so each person (and e
 
 ## What stays private
 
-- **On the pgPeek server**: your uploaded files, database passwords (encrypted), and the full results of every query.
+- **On the Datasquint server**: your uploaded files, database passwords (encrypted), and the full results of every query.
 - **Sent to the AI model**: your messages, attached file text or previews, table and column names with a few sample rows, and query results (at most 200 rows each).
 - **In your browser**: your chats.
 
@@ -204,7 +204,7 @@ Only attach files and connect data you're allowed to send to the AI provider you
 
 **My chats disappeared.** You're probably at a different address, in a private window, or browsing data was cleared. Try the address you used before, or import your last export.
 
-**A CSV shows only its size, not "table, N rows".** It couldn't be read as a table. Check that it's a real CSV with a header row; if it is, ask your administrator to check that DuckDB is installed.
+**A CSV shows only its size, not "table, N rows".** It couldn't be read as a table. Check that it's a real CSV with a header row; if it is, ask your administrator: tables may be turned off on this server (`FILE_TABLES=0`), or DuckDB may not be installed. When tables are off, CSV and Excel files are limited to 20 MB and the AI reads them as text instead of querying them.
 
 **"Over the 200 MB limit".** Split the file, or ask your administrator to raise the limit.
 
@@ -214,12 +214,14 @@ Only attach files and connect data you're allowed to send to the AI provider you
 
 **The AI's number looks wrong.** Expand **SQL** on the result card to see what it calculated, then tell it what to change, such as *"exclude test boards"* or *"use order_date, not ship_date"*.
 
-**A file shows "(unavailable)".** It was deleted from the server, or the chat was imported from another pgPeek. Attach the file again.
+**A file shows "(unavailable)".** It was deleted from the server, or the chat was imported from another Datasquint. Attach the file again.
 
 **Storage shows "(incomplete upload)" or "still uploading…".** *Still uploading…* means a big file is still being loaded; wait for it to finish (it can't be deleted until then). *(incomplete upload)* is a leftover from an upload or delete that was interrupted; just delete it.
 
-**A file won't delete.** pgPeek tries for a few seconds, then tells you which file is still there and why. Usually another program has it open: antivirus checking a new file, a File Explorer window, or Excel. Wait a moment or close that program, then delete it again from **Storage**.
+**A file won't delete.** Datasquint tries for a few seconds, then tells you which file is still there and why. Usually another program has it open: antivirus checking a new file, a File Explorer window, or Excel. Wait a moment or close that program, then delete it again from **Storage**.
 
 **Where did a file I removed go?** If you ticked *Also delete it from the server*, it's gone. Otherwise it's still in **Storage**, where you can delete it later.
 
-**Which version of pgPeek is this?** It's shown at the bottom of the sidebar and at the end of this guide. The README's changelog lists what changed in each version.
+**Where did pgPeek go?** It's the same app under a new name, Datasquint, chosen because it now works with files as well as databases. Your chats and colour theme come across automatically when you open Datasquint at the same address as before, and exports from pgPeek import as they are.
+
+**Which version of Datasquint is this?** It's shown at the bottom of the sidebar and at the end of this guide. The README's changelog lists what changed in each version.

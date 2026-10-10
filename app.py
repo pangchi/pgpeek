@@ -42,6 +42,7 @@ import openai
 
 import db
 import filesql
+import scriptgen
 from version import __version__ as VERSION
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context
 from werkzeug.utils import secure_filename
@@ -948,6 +949,126 @@ def db_export():
     return resp
 
 
+# ---------------------------------------------------------------- table browser
+@app.post("/api/tables")
+def tables_list():
+    """Every table the chat can use: its databases' tables and views, and its attached files' tables."""
+    data = request.get_json(force=True) or {}
+    sources = []
+    ftables = file_tables(data.get("files") or [])
+    if ftables:
+        sources.append({"id": db.FILES_SOURCE, "name": "Files", "kind": "files", "tables": [
+            {"name": t["name"], "rows": t["rows"], "columns": t["columns"], "file": t["file"],
+             "sheet": t.get("sheet") or "", "title": t.get("title") or ""} for t in ftables]})
+    for cid in data.get("dbs") or []:
+        try:
+            c = db.config(cid)
+        except KeyError:
+            continue
+        src = {"id": cid, "name": c["name"], "kind": "db", "tables": []}
+        try:
+            src["tables"] = db.table_list(cid, refresh=bool(data.get("refresh")))
+        except Exception as e:
+            src["error"] = str(e).strip()
+        sources.append(src)
+    return jsonify(sources=sources)
+
+
+def _browse_target(data):
+    """(run(sql, max_rows) -> result, quoted table, column names) for a table the chat may use, or ValueError."""
+    source, table = data.get("source"), data.get("table")
+    if source == db.FILES_SOURCE:
+        ftables = file_tables(data.get("files") or [])
+        t = next((t for t in ftables if t["name"] == table), None)
+        if not t:
+            raise ValueError("That table isn't attached to this chat any more.")
+        run = lambda sql, n: filesql.run_query(sql, ftables, n, db.DB_TIMEOUT_MS)
+        return run, filesql._q(t["name"]), [c for c, _ in t["columns"]], t["rows"]
+    if source not in (data.get("dbs") or []):
+        raise ValueError("That database isn't turned on for this chat.")
+    t = next((t for t in db.table_list(source) if t["name"] == table), None)
+    if not t:
+        raise ValueError(f"No table {table} in that database (it may have been renamed or dropped).")
+    c = db.config(source)
+    run = lambda sql, n: db.run_query(sql, [source], c, max_rows=n)
+    return run, f"{db.quote_ident(t['schema'])}.{db.quote_ident(t['table'])}", [col for col, _ in t["columns"]], t["rows"]
+
+
+@app.post("/api/tables/preview")
+def tables_preview():
+    """A page of rows from one table, optionally sorted and filtered. Runs through the same read-only checks."""
+    data = request.get_json(force=True) or {}
+    try:
+        run, qtable, cols, known = _browse_target(data)
+        limit = max(1, min(200, int(data.get("limit") or 50)))
+        offset = max(0, int(data.get("offset") or 0))
+        where = ""
+        q = str(data.get("q") or "").strip()[:200]
+        if q:
+            lit = "'" + q.lower().replace("'", "''") + "'"
+            where = " WHERE " + " OR ".join(f"strpos(lower({db.quote_ident(c)}::text), {lit}) > 0" for c in cols)
+        order = ""
+        if data.get("sort") in cols:
+            order = f" ORDER BY {db.quote_ident(data['sort'])} {'DESC' if data.get('desc') else 'ASC'} NULLS LAST"
+        res = run(f"SELECT * FROM {qtable}{where}{order} LIMIT {limit} OFFSET {offset}", limit)
+        total = known if not where and data.get("source") == db.FILES_SOURCE else None
+        if total is None and (where or known is None):   # filtered, or a table PostgreSQL has no estimate for
+            try:
+                total = run(f"SELECT count(*) FROM {qtable}{where}", 1)["rows"][0][0]
+            except Exception:
+                total = None   # e.g. a filtered count that times out on a huge table
+        return jsonify(columns=res["columns"], rows=res["rows"], offset=offset, limit=limit, total=total,
+                       estimate=None if where or data.get("source") == db.FILES_SOURCE else known,
+                       ms=res["ms"], sql=f"SELECT * FROM {qtable}{where}{order}")
+    except Exception as e:
+        return jsonify(error=str(e).strip()), 400
+
+
+# ---------------------------------------------------------------- Python script
+@app.post("/api/script")
+def make_script():
+    """A standalone .py that re-runs the given queries offline (see scriptgen.py)."""
+    data = request.get_json(force=True) or {}
+    cids = data.get("dbs") or []
+    ftables = file_tables(data.get("files") or [])
+    queries, used_dbs, seen = [], {}, set()
+    for item in data.get("queries") or []:
+        sql = str(item.get("sql") or "").strip()
+        if not sql or sql in seen:
+            continue
+        seen.add(sql)
+        try:
+            target = db.resolve_target(sql, cids, has_files=bool(ftables))
+        except ValueError:
+            continue
+        first = next((ln.strip() for ln in sql.splitlines() if ln.strip() and not ln.strip().startswith("--")), sql)
+        title = str(item.get("title") or "").strip() or first[:70]
+        if target == db.FILES_SOURCE:
+            queries.append({"title": title, "sql": sql, "source": db.FILES_SOURCE})
+        else:
+            pub = db.public(target)
+            used_dbs[target["name"]] = {"host": pub.get("host"), "port": pub.get("port"), "dbname": pub.get("dbname"),
+                                        "user": pub.get("user"), "sslmode": pub.get("sslmode") or "",
+                                        "ssh": {k: pub["ssh"].get(k) for k in ("host", "port", "user")} if pub.get("ssh") else None}
+            queries.append({"title": title, "sql": sql, "source": target["name"]})
+    if not queries:
+        return jsonify(error="There are no queries to put in a script: run a query first."), 400
+    file_sql = " ".join(q["sql"] for q in queries if q["source"] == db.FILES_SOURCE).lower()
+    used_tables = []
+    for t in ftables:
+        if re.search(r"\b" + re.escape(t["name"].lower()) + r"\b", file_sql):
+            load = t.get("load")
+            used_tables.append({"name": t["name"], "file": t["file"], "sheet": t.get("sheet") or "",
+                                "approximate": load is None,
+                                "load": load or ({"kind": "sheet", "sheet": t["sheet"], "col_offset": 0} if t.get("sheet")
+                                                 else {"kind": "csv", "delim": "\t" if t["file"].lower().endswith(".tsv") else None})})
+    title = str(data.get("title") or "Datasquint queries").strip()
+    text = scriptgen.build(title, queries, used_tables, used_dbs)
+    name = (re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")[:50] or "datasquint_queries") + ".py"
+    return Response(text, mimetype="text/x-python",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "X-Queries": str(len(queries))})
+
+
 @app.post("/api/chat")
 def chat():
     """Stream a completion back as newline-delimited JSON.
@@ -997,10 +1118,25 @@ if __name__ == "__main__":
     # Debug mode is off by default: its in-browser debugger can run code, and its auto-reloader would
     # restart the server whenever a .zip lands in uploads/. FLASK_DEBUG=1 turns it on for development.
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    host = os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1"
+    port_text = os.getenv("PORT", "5000").strip() or "5000"
+    if not port_text.isdigit() or not 1 <= int(port_text) <= 65535:
+        sys.exit(f"PORT={port_text!r} in .env isn't a valid port number. Use a number from 1 to 65535, e.g. PORT=8080.")
+    port = int(port_text)
+    # Fail early with a clear message if something else already uses the port
+    import socket
+    with socket.socket(socket.AF_INET6 if ":" in host else socket.AF_INET) as probe:
+        try:
+            probe.bind((host, port))
+        except OSError as e:
+            sys.exit(f"Can't use port {port} on {host}: {e.strerror or e}. Another program (or another Datasquint) "
+                     f"may be using it. Set a different PORT in .env, e.g. PORT={port + 1}.")
     print(f" * Datasquint {VERSION}")
     print(f" * SQL over CSV/TSV/Excel files: {filesql.status()}"
           + (f", up to {MAX_TABLE_UPLOAD_MB} MB per file" if filesql.available() else f"; those files are read as text, up to {MAX_UPLOAD_MB} MB"))
-    app.run(host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 5000)), debug=debug, threaded=True,
+    shown = "localhost" if host in ("127.0.0.1", "localhost") else ("<this computer's address>" if host in ("0.0.0.0", "::") else host)
+    print(f" * Open http://{shown}:{port} in your browser")
+    app.run(host=host, port=port, debug=debug, threaded=True,
             # watchdog matches patterns per path segment, so list each depth under uploads/
             exclude_patterns=[os.path.join(UPLOAD_DIR, *["*"] * n) for n in (1, 2, 3)] + ["*.sqlite", "*.duckdb"]
             if debug else None)

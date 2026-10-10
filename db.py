@@ -328,6 +328,44 @@ def schema(cid, refresh=False):
     return {"text": text, "tables": len(order)}
 
 
+_list_cache = {}
+
+
+def table_list(cid, refresh=False):
+    """Tables and views with their columns and row estimates, for the table browser."""
+    c = config(cid)
+    fp = (c.get("dsn"), repr(c.get("ssh")), c.get("schemas"))
+    with _lock:
+        hit = _list_cache.get(cid)
+        if hit and not refresh and hit["fp"] == fp and time.time() - hit["at"] < SCHEMA_CACHE_SECS:
+            return hit["tables"]
+    schemas = _schemas(c)
+    conn = _open(c)
+    try:
+        cols = conn.execute(SCHEMA_COLUMNS_SQL, (schemas,)).fetchall()
+        counts = {(s, t): n for s, t, n in conn.execute(SCHEMA_ROWS_SQL, (schemas,)).fetchall()}
+    finally:
+        conn.rollback()
+        conn.close()
+    tables, order = {}, []
+    for s, t, ttype, col, dtype, _nullable in cols:
+        if (s, t) not in tables:
+            order.append((s, t))
+            n = counts.get((s, t))
+            tables[(s, t)] = {"schema": s, "table": t, "name": t if len(schemas) == 1 else f"{s}.{t}",
+                              "view": ttype == "VIEW", "rows": int(n) if n is not None and n >= 0 else None,
+                              "columns": []}
+        tables[(s, t)]["columns"].append([col, dtype])
+    out = [tables[k] for k in order]
+    with _lock:
+        _list_cache[cid] = {"at": time.time(), "fp": fp, "tables": out}
+    return out
+
+
+def quote_ident(name):
+    return '"' + str(name).replace('"', '""') + '"'
+
+
 # ---------------------------------------------------------------- queries
 def _strip_comments(sql):
     sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)

@@ -266,6 +266,46 @@ dialog input[type=text],dialog input[type=password],dialog select.full{width:100
 #askNote{margin-top:8px}
 .btn.primary.danger{background:var(--danger);border-color:var(--danger);color:#fff}
 .btn.primary.danger:disabled{opacity:.4;cursor:default}
+/* table browser */
+.tbbtn{display:flex;align-items:center;gap:6px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;color:var(--muted);font-size:13px}
+.tbbtn:hover{color:var(--ink);border-color:var(--accent)}
+#tablesDlg{width:min(1180px,96vw);height:min(86vh,900px);max-height:none;padding:0;overflow:hidden}
+#tablesDlg[open]{display:flex;flex-direction:column}
+.tbhead{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.tbhead h2{margin:0;flex:1}
+.tbbody{flex:1;display:grid;grid-template-columns:270px 1fr;min-height:0}
+.tblist{border-right:1px solid var(--line);overflow-y:auto;padding:10px}
+.tblist input{width:100%;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);margin-bottom:8px}
+.tbsrc{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:12px 4px 4px}
+.tbsrc .err{display:block;text-transform:none;letter-spacing:0;font-weight:400;color:var(--danger);margin-top:2px}
+.tbitem{display:block;width:100%;text-align:left;background:none;border:0;border-radius:6px;padding:6px 8px;cursor:pointer;color:var(--ink)}
+.tbitem:hover{background:var(--bg)}
+.tbitem.sel{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.tbitem b{display:block;font:500 13px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbitem small{color:var(--muted);font-size:11px}
+.tbmain{display:flex;flex-direction:column;min-width:0;min-height:0;padding:14px 18px;gap:10px}
+.tbtitle{display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.tbtitle h3{margin:0;font:600 16px var(--mono);word-break:break-all}
+.tbtitle .sub{color:var(--muted);font-size:12px;margin-top:2px}
+.tbtitle .acts{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.tbcols{display:flex;flex-wrap:wrap;gap:4px;max-height:64px;overflow-y:auto}
+.tbcols span{font:12px var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 6px}
+.tbcols i{font-style:normal;color:var(--muted)}
+.tbctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tbctl input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg)}
+.tbgrid{flex:1;overflow:auto;border:1px solid var(--line);border-radius:8px;min-height:0}
+.tbgrid table{border-collapse:collapse;font-size:13px;width:max-content;min-width:100%}
+.tbgrid th{position:sticky;top:0;background:var(--panel);text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none;white-space:nowrap;font-weight:600}
+.tbgrid th:hover{color:var(--accent)}
+.tbgrid th .ar{color:var(--accent);margin-left:4px}
+.tbgrid td{padding:4px 10px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:320px;overflow:hidden;text-overflow:ellipsis}
+.tbgrid td.null{color:var(--muted);font-style:italic}
+.tbgrid td.num{text-align:right;font-variant-numeric:tabular-nums}
+.tbpager{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.tbpager .sp{flex:1}
+.tbempty{margin:auto;text-align:center;color:var(--muted);max-width:420px;line-height:1.6}
+@media (max-width:760px){.tbbody{grid-template-columns:1fr;grid-template-rows:38% 1fr}.tblist{border-right:0;border-bottom:1px solid var(--line)}}
+
 /* storage */
 #storageDlg{width:min(860px,95vw);max-height:92vh}
 .stbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px;font-size:14px}
@@ -345,6 +385,10 @@ dialog textarea{min-height:110px;resize:vertical}
       <button id="dbToggle" aria-haspopup="true" title="Choose which databases the model can query in this chat"><span class="dot"></span><span id="dbLabel">Database off</span><span class="caret">▾</span></button>
       <div id="dbMenu" hidden></div>
     </div>
+    <button class="tbbtn" id="tablesBtn" title="Browse the tables this chat can use">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/></svg>
+      Tables
+    </button>
     <div id="title"></div>
     <div class="expwrap">
       <button class="iconbtn" id="exportBtn" aria-haspopup="true" aria-label="Export this chat" title="Export this chat">
@@ -353,6 +397,7 @@ dialog textarea{min-height:110px;resize:vertical}
       <div id="exportMenu" hidden>
         <button id="expHtml">Download as HTML<small>Readable page to open, print or share</small></button>
         <button id="expJson">Download as JSON<small>Backup you can import later</small></button>
+        <button id="expPy">Download as Python script<small>Re-run this chat's queries offline, without Datasquint</small></button>
       </div>
     </div>
   </header>
@@ -450,6 +495,17 @@ dialog textarea{min-height:110px;resize:vertical}
   <div class="row">
     <button class="btn" id="askCancel" type="button">Cancel</button>
     <button class="btn primary danger" id="askOk" type="button">Delete</button>
+  </div>
+</dialog>
+<dialog id="tablesDlg" aria-labelledby="tbH">
+  <div class="tbhead">
+    <h2 id="tbH">Tables</h2>
+    <button class="btn" id="tbRefresh" type="button" title="Reload the list (e.g. after the database changed)">Refresh</button>
+    <button class="btn" id="tbClose" type="button">Close</button>
+  </div>
+  <div class="tbbody">
+    <div class="tblist"><input id="tbFind" type="search" placeholder="Find a table…" aria-label="Find a table"><div id="tbList"></div></div>
+    <div class="tbmain" id="tbMain"></div>
   </div>
 </dialog>
 <dialog id="storageDlg">
@@ -710,6 +766,10 @@ function sqlCard(r){
     dl.title = "Run the query again and download the full result (not just the rows shown here)";
     dl.onclick = () => downloadResult(r, dl);
     card.querySelector(".sqlhead").appendChild(dl);
+    const py = document.createElement("button"); py.className = "dlcsv"; py.type = "button"; py.textContent = "Python";
+    py.title = "Download a Python script that re-runs this query offline, without Datasquint";
+    py.onclick = () => downloadScript([{ sql: r.sql }], `${cur()?.title || "query"} query`, py);
+    card.querySelector(".sqlhead").appendChild(py);
   }
   if (r.error) {
     const e = document.createElement("div"); e.className = "sqlerr"; e.textContent = r.error; card.appendChild(e);
@@ -1686,6 +1746,169 @@ $("#exportAll").onclick = () => {
 };
 $("#importBtn").onclick = () => $("#importFile").click();
 $("#importFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) importChats(f); };
+
+/* ---------- Python scripts ---------- */
+function chatQueries(c = cur()){
+  const out = [], seen = new Set();
+  for (const m of c?.messages || []) for (const r of m.results || [])
+    if (r.sql && !r.error && !seen.has(r.sql)) { seen.add(r.sql); out.push({ sql: r.sql }); }
+  return out;
+}
+async function downloadScript(queries, title, btn){
+  const c = cur(); if (!c) return;
+  if (!queries.length) { notify("This chat has no successful queries yet. Run one first.", true); return; }
+  const label = btn?.textContent; if (btn) { btn.disabled = true; btn.textContent = "Preparing…"; }
+  try {
+    const res = await fetch("/api/script", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, queries, dbs: chatDbs(c), files: browseFileIds(c) }) });
+    if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || `Server returned ${res.status}`); }
+    const name = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || `${slug(title)}.py`;
+    download(name, await res.text(), "text/x-python");
+    const n = +res.headers.get("X-Queries") || queries.length;
+    notify(`Saved ${name} with ${n} quer${n === 1 ? "y" : "ies"}. Put it next to the original data files and run: python ${name}`);
+  } catch (e) { notify(`Couldn't make the script: ${e.message}`, true); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
+}
+$("#expPy").onclick = () => {
+  expMenu.hidden = true;
+  const c = cur(); if (!c?.messages.length) return;
+  downloadScript(chatQueries(c), c.title || "Datasquint queries");
+};
+
+/* ---------- table browser ---------- */
+const tbDlg = $("#tablesDlg");
+let tb = { sources: [], sel: null, offset: 0, limit: 50, sort: null, desc: false, q: "", seq: 0, timer: null, last: null };
+function browseFileIds(c = cur()){
+  // sent attachments plus files that finished uploading but aren't sent yet, so they can be peeked at first
+  const ids = chatFileIds(c);
+  for (const p of pending) if (p.status === "ready" && p.meta?.id && !ids.includes(p.meta.id)) ids.push(p.meta.id);
+  return ids;
+}
+async function openTables(refresh = false){
+  const c = cur();
+  if (!tbDlg.open) tbDlg.showModal();
+  $("#tbList").innerHTML = `<div class="sqlnote">Loading…</div>`;
+  if (!refresh) { tb.sel = null; $("#tbMain").innerHTML = ""; }
+  try {
+    const res = await fetch("/api/tables", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dbs: chatDbs(c), files: browseFileIds(c), refresh }) });
+    tb.sources = (await res.json()).sources || [];
+  } catch (e) { tb.sources = []; notify(`Couldn't load tables: ${e.message}`, true); }
+  renderTableList();
+  if (tb.sel && !findTable(tb.sel.src, tb.sel.name)) tb.sel = null;
+  if (!tb.sel) {
+    const first = tb.sources.find(s => s.tables.length);
+    if (first) selectTable(first.id, first.tables[0].name); else renderTableMain();
+  } else loadPreview();
+}
+function findTable(src, name){ return tb.sources.find(s => s.id === src)?.tables.find(t => t.name === name); }
+function rowsText(t){
+  if (t.rows == null) return t.view ? "view" : "rows unknown";
+  return `${t.view ? "view · " : ""}${t.view ? "" : "~"}${(+t.rows).toLocaleString()} rows`.replace(/^~/, t.file ? "" : "~");
+}
+function renderTableList(){
+  const box = $("#tbList"), f = $("#tbFind").value.trim().toLowerCase();
+  box.innerHTML = "";
+  if (!tb.sources.length) { box.innerHTML = `<div class="sqlnote">No data sources in this chat.</div>`; return; }
+  for (const s of tb.sources) {
+    const h = document.createElement("div"); h.className = "tbsrc";
+    h.textContent = s.kind === "files" ? "Attached files" : `Database · ${s.name}`;
+    if (s.error) { const e = document.createElement("span"); e.className = "err"; e.textContent = s.error; h.appendChild(e); }
+    box.appendChild(h);
+    const list = s.tables.filter(t => !f || t.name.toLowerCase().includes(f) || (t.file || "").toLowerCase().includes(f));
+    if (!list.length && !s.error) { const n = document.createElement("div"); n.className = "sqlnote"; n.textContent = f ? "No match." : "No tables."; box.appendChild(n); }
+    for (const t of list) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "tbitem" + (tb.sel?.src === s.id && tb.sel?.name === t.name ? " sel" : "");
+      b.innerHTML = `<b></b><small></small>`;
+      b.querySelector("b").textContent = t.name;
+      b.querySelector("small").textContent = `${rowsText(t)} · ${t.columns.length} col${t.columns.length === 1 ? "" : "s"}`;
+      b.title = t.file ? `${t.file}${t.sheet ? " · sheet " + t.sheet : ""}${t.title ? " · " + t.title : ""}` : t.name;
+      b.onclick = () => selectTable(s.id, t.name);
+      box.appendChild(b);
+    }
+  }
+}
+function selectTable(src, name){
+  tb.sel = { src, name }; tb.offset = 0; tb.sort = null; tb.desc = false; tb.q = ""; tb.last = null;
+  renderTableList(); renderTableMain(); loadPreview();
+}
+function renderTableMain(){
+  const main = $("#tbMain");
+  if (!tb.sel) {
+    main.innerHTML = `<div class="tbempty"><b>No tables yet.</b><br>Tick a database with the database button, or attach CSV or Excel files, then open Tables again.</div>`;
+    return;
+  }
+  const s = tb.sources.find(x => x.id === tb.sel.src), t = findTable(tb.sel.src, tb.sel.name);
+  main.innerHTML = `<div class="tbtitle"><div><h3></h3><div class="sub"></div></div><div class="acts">
+      <button class="dlcsv" id="tbIns" type="button" title="Put the table name into your message">Insert name</button>
+      <button class="dlcsv" id="tbCsv" type="button" title="Download the rows matching the filter and sort, up to the download limit">Download CSV</button>
+      <button class="dlcsv" id="tbPy" type="button" title="Python script that loads this table and saves it as CSV, offline">Python</button></div></div>
+    <div class="tbcols"></div>
+    <div class="tbctl"><input id="tbQ" type="search" placeholder="Filter rows: any column contains…" aria-label="Filter rows">
+      <select id="tbLimit" aria-label="Rows per page"><option>50</option><option>100</option><option>200</option></select></div>
+    <div class="tbgrid" id="tbGrid"><div class="sqlnote" style="padding:10px">Loading…</div></div>
+    <div class="tbpager"><span id="tbInfo"></span><span class="sp"></span>
+      <button class="btn" id="tbPrev" type="button">‹ Prev</button><button class="btn" id="tbNext" type="button">Next ›</button></div>`;
+  main.querySelector("h3").textContent = t.name;
+  main.querySelector(".sub").textContent = s.kind === "files"
+    ? [t.file, t.sheet && `sheet ${t.sheet}`, t.title && `“${t.title}”`].filter(Boolean).join(" · ")
+    : `${s.name}${t.view ? " · view" : ""}`;
+  const cols = main.querySelector(".tbcols");
+  for (const [n, ty] of t.columns) { const sp = document.createElement("span"); sp.innerHTML = `<b></b> <i></i>`; sp.firstChild.textContent = n; sp.lastChild.textContent = String(ty).toLowerCase(); cols.appendChild(sp); }
+  $("#tbLimit").value = String(tb.limit);
+  $("#tbLimit").onchange = () => { tb.limit = +$("#tbLimit").value; tb.offset = 0; loadPreview(); };
+  $("#tbQ").oninput = () => { clearTimeout(tb.timer); tb.timer = setTimeout(() => { tb.q = $("#tbQ").value; tb.offset = 0; loadPreview(); }, 300); };
+  $("#tbPrev").onclick = () => { tb.offset = Math.max(0, tb.offset - tb.limit); loadPreview(); };
+  $("#tbNext").onclick = () => { tb.offset += tb.limit; loadPreview(); };
+  $("#tbIns").onclick = () => {
+    const inp = $("#input"), a = inp.selectionStart ?? inp.value.length, b = inp.selectionEnd ?? a;
+    inp.value = inp.value.slice(0, a) + t.name + inp.value.slice(b);
+    tbDlg.close(); inp.focus(); inp.selectionStart = inp.selectionEnd = a + t.name.length; inp.dispatchEvent(new Event("input"));
+  };
+  $("#tbCsv").onclick = () => tb.last && downloadResult({ sql: viewSql(), db_name: t.name }, $("#tbCsv"));
+  $("#tbPy").onclick = () => tb.last && downloadScript([{ sql: viewSql(), title: `${t.name}${tb.q ? " (filtered)" : ""}` }], t.name, $("#tbPy"));
+}
+function viewSql(){
+  const s = tb.sources.find(x => x.id === tb.sel.src);
+  return `-- db: ${s.kind === "files" ? "files" : s.name}\n${tb.last.sql}`;
+}
+async function loadPreview(){
+  if (!tb.sel) return;
+  const c = cur(), seq = ++tb.seq, grid = $("#tbGrid");
+  try {
+    const res = await fetch("/api/tables/preview", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: tb.sel.src, table: tb.sel.name, dbs: chatDbs(c), files: browseFileIds(c),
+        offset: tb.offset, limit: tb.limit, sort: tb.sort, desc: tb.desc, q: tb.q }) });
+    const d = await res.json();
+    if (seq !== tb.seq || !grid.isConnected) return;   // a newer request (or another table) took over
+    if (d.error) { grid.innerHTML = ""; const e = document.createElement("div"); e.className = "sqlerr"; e.style.margin = "10px"; e.textContent = d.error; grid.appendChild(e); $("#tbInfo").textContent = ""; return; }
+    tb.last = d;
+    const t = document.createElement("table"), hr = t.createTHead().insertRow();
+    d.columns.forEach(col => {
+      const th = document.createElement("th"); th.textContent = col;
+      if (tb.sort === col) { const ar = document.createElement("span"); ar.className = "ar"; ar.textContent = tb.desc ? "▼" : "▲"; th.appendChild(ar); }
+      th.title = "Sort by this column (click again to reverse)";
+      th.onclick = () => { if (tb.sort === col) { if (tb.desc) { tb.sort = null; tb.desc = false; } else tb.desc = true; } else { tb.sort = col; tb.desc = false; } tb.offset = 0; loadPreview(); };
+      hr.appendChild(th);
+    });
+    const body = t.createTBody();
+    for (const row of d.rows) { const tr = body.insertRow(); for (const v of row) { const td = tr.insertCell();
+      if (v === null) { td.textContent = "NULL"; td.className = "null"; }
+      else { td.textContent = String(v); td.title = String(v); if (typeof v === "number") td.className = "num"; } } }
+    grid.innerHTML = ""; grid.appendChild(t); grid.scrollTop = 0;
+    if (!d.rows.length) { const n = document.createElement("div"); n.className = "sqlnote"; n.style.padding = "10px"; n.textContent = tb.q ? "No rows match the filter." : "No rows."; grid.appendChild(n); }
+    const from = d.rows.length ? d.offset + 1 : 0, to = d.offset + d.rows.length;
+    const total = d.total ?? d.estimate;
+    $("#tbInfo").textContent = `Rows ${from.toLocaleString()}–${to.toLocaleString()}` +
+      (total != null ? ` of ${d.total == null ? "~" : ""}${(+total).toLocaleString()}${tb.q ? " matching" : ""}` : "") + ` · ${d.ms} ms`;
+    $("#tbPrev").disabled = d.offset === 0;
+    $("#tbNext").disabled = d.rows.length < d.limit || (d.total != null && to >= d.total);
+  } catch (e) { if (seq === tb.seq) grid.innerHTML = `<div class="sqlerr" style="margin:10px">Couldn't load rows: ${esc(e.message)}</div>`; }
+}
+$("#tablesBtn").onclick = () => openTables();
+$("#tbRefresh").onclick = () => openTables(true);
+$("#tbClose").onclick = () => tbDlg.close();
+$("#tbFind").oninput = renderTableList;
 
 /* ---------- settings ---------- */
 const dlg = $("#settings");

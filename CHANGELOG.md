@@ -8,6 +8,36 @@ All notable changes to Datasquint (called pgPeek up to 1.4.0). Versions follow `
 
 The version is set in `version.py`. It's shown at the bottom of the sidebar and on the Help page, returned by `/api/version`, and recorded in chat exports.
 
+## 2.2.0 — 2026-10-11
+
+### Added
+- **Table browser** (**Tables** in the top bar): every table the chat can use, from its databases and its attached files (including files not sent yet), with columns and types, row counts, a paged preview, sort by column, row filter, **Insert name**, **Download CSV** and **Python**. Read-only, through the same checks as queries; nothing goes to the AI.
+- **Python scripts for offline use**: **Python** on each result card, **Download as Python script** in the export menu (all of a chat's queries), and **Python** in the table browser. The script rebuilds each file's tables from the original files exactly as Datasquint loaded them (same column types, sheets and split tables), connects to PostgreSQL for database queries (password from an environment variable or a prompt, never stored), runs each query and saves the results as CSV. Checked table-for-table against Datasquint on CSV, TSV, Windows-1252, multi-sheet, offset and split-table files.
+- Uploads now record where each table sits in its file (Excel rows and columns, or CSV records), so scripts can rebuild split tables.
+- `POST /api/tables`, `POST /api/tables/preview`, `POST /api/script`; `scriptgen.py`.
+
+## 2.1.0 — 2026-10-10
+
+### Added
+- **Several tables in one sheet or CSV become separate tables.** Blocks separated by blank rows (stacked) or blank columns (side by side) are each loaded as their own table with their own header and column types. Before, they were merged into one misleading table: a second table's header became a data row, or side-by-side tables were glued together row by row.
+  - A one-cell title line above a table (e.g. *Weekly QA report*) names it and is no longer mistaken for the header; otherwise tables are named after their first column heading.
+  - Blocks that are really one table stay together: rows after a spacing blank row, a repeated header (page breaks), or a lone total line join the table above.
+  - The model is told which tables came from the same sheet, and the preview labels each one.
+  - Ordinary one-table files are never touched by the splitter and load exactly as before, with no extra time. A file that does hold several tables takes longer to load (about 20 s for 150 MB).
+- `SPLIT_TABLES` (default `1`) and `MAX_SPLIT_TABLES` (default `30`) settings.
+
+### Fixed
+- A title row at the top of a CSV or sheet no longer becomes the column names (the real header row below it is used).
+
+## 2.0.1 — 2026-10-10
+
+### Changed
+- **`PORT` is now in `env.example`** (with `HOST`), so the port is easy to change from 5000. Startup prints the address to open, e.g. ` * Open http://localhost:8080 in your browser`.
+
+### Fixed
+- An invalid `PORT` (not a number, or outside 1–65535) stopped with a Python traceback; it now says what's wrong.
+- A port already in use now gives a clear message suggesting another `PORT`, instead of a socket error.
+
 ## 2.0.0 — 2026-10-10
 
 ### Changed

@@ -11,6 +11,8 @@ This guide covers everyday use. For installation and settings, see the README.
 - [Getting answers from data](#getting-answers-from-data)
 - [Attaching files](#attaching-files)
 - [Asking about CSV and Excel files](#asking-about-csv-and-excel-files)
+- [Browsing tables](#browsing-tables)
+- [Python scripts for later](#python-scripts-for-later)
 - [Removing files and freeing space](#removing-files-and-freeing-space)
 - [Saving, exporting and importing chats](#saving-exporting-and-importing-chats)
 - [Database connections](#database-connections)
@@ -41,7 +43,8 @@ The panel button at the top left of the main area hides or shows the sidebar.
 
 - **Model**: which AI model answers. Your administrator decides which ones are available.
 - **Database chip**: which data sources this chat can use. It shows a database name, *2 databases*, *Files*, or *Database off*. A blue dot means the source is connected; red means there's a problem.
-- **Download icon** (right): export the current chat.
+- **Tables**: browse the tables this chat can use, with their columns and rows. See [Browsing tables](#browsing-tables).
+- **Download icon** (right): export the current chat, including as a Python script.
 
 **Message box** (bottom)
 
@@ -113,12 +116,36 @@ CSV and Excel files become tables the AI can query, so totals and counts are **e
 Good to know:
 
 - Each file, and each Excel sheet, becomes one table, named after the file: `march_orders.csv` becomes `march_orders`, and sheet *Defects* of `qa.xlsx` becomes `qa_defects`.
+- **Several tables on one sheet are fine.** If tables are separated by an empty row or an empty column, each becomes its own table, and the file's chip shows how many were found (for example *4 tables*). A title line above a table, like *Weekly QA report*, names it; otherwise it's named after its first column. Leave at least one empty row or column between tables, and give each its own header row. An empty row *inside* a table is fine: rows that carry on below it stay in the same table.
 - Column names become lower case with underscores: *Unit Price ($)* becomes `unit_price`.
 - The first row should hold the column names.
 - Files stay available for the whole chat. Attach April's file later and ask *"compare with March"*.
 - If a chat also has a database, the AI can use both, querying each separately and combining the results.
 - A 200 MB CSV loads in about 10 seconds. Big Excel files take longer (about a minute for 4 million rows), so for very large data, save it as CSV first.
 - Tell the AI what columns mean if it isn't obvious, for example *"status D means done; times are UTC"*.
+
+## Browsing tables
+
+Click **Tables** in the top bar to have a look at the data before (or while) you ask about it. It lists every table this chat can use: the tables of its databases and the tables from its attached files, including files you've attached but not sent yet.
+
+- Click a table to see its columns and a page of rows.
+- Click a column heading to sort by it; click again to reverse.
+- Type in **Filter rows** to keep only rows containing that text in any column.
+- **Prev** / **Next** move through the rows; the bottom line shows how many there are.
+- **Insert name** puts the table's name into your message, handy for *"total qty in mixed_report_station by month"*.
+- **Download CSV** saves the rows you're looking at (with the filter and sort), for Excel.
+
+Browsing only reads, and nothing you look at is sent to the AI.
+
+## Python scripts for later
+
+Liked an answer and want to repeat it next week without the chat? Save it as a Python script:
+
+- **Python** on a result card saves a script for that one query.
+- **Download icon → Download as Python script** saves one script with all the chat's queries.
+- **Python** in the table browser saves a script that exports that table.
+
+To use it, put the script in a folder with the original files (same names as when you attached them) and run `python script-name.py`. Each result is saved as a CSV in an `output` folder next to it. The top of the script says what to install and which files it needs. For databases it asks for the password when it runs; passwords are never saved in the script. You don't need Datasquint or the AI to run it, and someone who knows Python can change it, for example to use a different date.
 
 ## Removing files and freeing space
 

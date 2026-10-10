@@ -1,6 +1,6 @@
 # Datasquint
 
-**Version 2.0.0** · [Changelog](CHANGELOG.md)
+**Version 2.2.0** · [Changelog](CHANGELOG.md)
 
 Ask questions about your PostgreSQL databases and your CSV and Excel files in plain language. Datasquint is a ChatGPT-style web app (Flask) that works with any OpenAI-compatible model: the model writes read-only SQL, the app runs it, and the model answers from the results. It can also read files you attach, from single documents to zipped projects.
 
@@ -20,6 +20,8 @@ Ask questions about your PostgreSQL databases and your CSV and Excel files in pl
 - [Security](#security)
 - [Attaching files](#attaching-files)
 - [Querying CSV and Excel files](#querying-csv-and-excel-files)
+- [Browsing tables](#browsing-tables)
+- [Python scripts for offline use](#python-scripts-for-offline-use)
 - [Removing files and freeing space](#removing-files-and-freeing-space)
 - [Large requests](#large-requests)
 - [Saving, exporting and importing chats](#saving-exporting-and-importing-chats)
@@ -41,7 +43,7 @@ cp env.example .env        # set OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL
 python app.py
 ```
 
-Open http://127.0.0.1:5000, then:
+Open http://127.0.0.1:5000 (or the port you set with `PORT` in `.env`; the startup message shows the address), then:
 
 1. **Sidebar → Database → + New connection.** Enter the details, add a few notes about what the data means, and press **Test & save**.
 2. The new database is turned on for the current chat; the chip next to the model picker shows its name.
@@ -197,6 +199,7 @@ Drop one or more CSV, TSV or Excel files into a chat (or pick several with the p
 **What happens on upload**
 
 - The file is loaded into a small DuckDB database stored with the upload (`uploads/<id>/tables.duckdb`). Column types (whole numbers, decimals, dates, timestamps, text) are detected from all rows, and the delimiter and header row are detected automatically.
+- **Several tables in one sheet or CSV are split into separate tables.** Blocks separated by a blank row (stacked) or a blank column (side by side) each become their own table, with their own header row. A one-cell line above a table, like *Weekly QA report*, is taken as its title and names the table (`qa_report_weekly_qa_report`); otherwise the table is named after its first column heading (`qa_report_station`), or `table_2`, `table_3`. Blocks that are really one table stay together: a block that doesn't start with a header row (more data after a spacing row, a lone total line) or repeats the header above it (page breaks) is joined to the table above. Ordinary one-table files skip this entirely and load exactly as before. Turn it off with `SPLIT_TABLES=0`.
 - Column names are converted to `lower_snake_case`: `Unit Price ($)` becomes `unit_price`, `Order Date` becomes `order_date`. Names that are SQL keywords get a leading underscore (`Operator` becomes `_operator`); the schema the model sees shows the final names.
 - **Big files**: CSV, TSV and Excel files can be up to `MAX_TABLE_UPLOAD_MB` (default **200 MB**), well above the 20 MB limit for other files, because only a preview reaches the model. The chip shows upload progress, then *Loading table…* while the table is built. Only the first 64 KB of the file is read as text.
 - CSVs saved by Excel in Windows encoding (accents like *München*) are converted to UTF-8 first.
@@ -228,6 +231,37 @@ Disk use per file is the original (kept so it can be opened from the chat) plus 
 **Turning it off**: set `FILE_TABLES=0` in `.env` and restart to stop CSV/TSV/Excel being loaded into DuckDB (and so disallow large ones); see [Configuration](#configuration).
 
 **Limits**: CSV/TSV/Excel up to `MAX_TABLE_UPLOAD_MB` (200 MB), other files up to `MAX_UPLOAD_MB` (20 MB). A CSV that can't be read as a table falls back to text, and then the 20 MB limit applies. Excel allows about a million rows per sheet; bigger data needs several sheets or a CSV. CSV and Excel files inside a zip are sent as text, not tables; attach them directly to query them. Excel formulas give their last saved values (see [Attaching files](#attaching-files)).
+
+## Browsing tables
+
+**Tables** in the top bar opens a browser for everything the current chat can query: the tables and views of its ticked databases, and the tables from its attached CSV/TSV/Excel files (including ones still waiting to be sent, so you can check a file before asking about it).
+
+- The list on the left shows each table's row count (`~` for PostgreSQL's estimate) and number of columns; **Find a table…** narrows it. For files, hovering shows the file, sheet and title it came from.
+- Picking a table shows its columns with types and a page of rows. Click a column heading to sort (again to reverse, a third time to clear), type in **Filter rows** to keep rows where any column contains the text, choose 50/100/200 rows per page, and page with **Prev**/**Next**.
+- **Insert name** puts the table name into your message. **Download CSV** saves the rows matching the current filter and sort, up to `DB_EXPORT_MAX_ROWS`. **Python** saves a script that loads the table and writes it to CSV offline (see below).
+- It's read-only like everything else: each page is a `SELECT … LIMIT … OFFSET …` built from validated table and column names and run through the same checks, timeout and row cap as the model's queries. Nothing is sent to the AI.
+- **Refresh** reloads the list after the database has changed. Database table lists are cached for `SCHEMA_CACHE_SECS`.
+
+## Python scripts for offline use
+
+Any query can be turned into a standalone Python script that re-runs it later without Datasquint, the AI or the web browser:
+
+- **Python** on a result card: a script for that query.
+- **Download icon → Download as Python script**: one script with every successful query in the chat, in order.
+- **Python** in the table browser: a script that loads that table (with the current filter and sort) and saves it as CSV.
+
+The script rebuilds each attached file's tables from the **original file** exactly as Datasquint loaded them: same DuckDB settings and column types, same Excel sheet conversion, and the same blocks when a sheet holds several tables (their positions are recorded at upload). It then runs each query, prints the first rows and saves every result as a CSV in `output/`.
+
+```bash
+pip install duckdb openpyxl "psycopg[binary]"   # the script's header lists exactly what it needs
+python weekly_qa_check.py                          # data files next to the script
+python weekly_qa_check.py --data D:/exports --out D:/results --only 2 --show 20
+```
+
+- **Files**: put the original files (same names) next to the script, or point `--data` at their folder. Only the files the queries use are loaded. A missing file stops with a message naming it.
+- **Databases**: connection details (host, port, database, user, SSL mode) are filled in; **passwords never are**. Set `DS_<NAME>_PASSWORD` (or `PGPASSWORD`), or type it when asked; `DS_<NAME>_HOST`/`_PORT`/`_USER`/`_DBNAME` override the rest. Connections through SSH need a tunnel first; the script's header shows the exact `ssh -L` command.
+- The script sets its database sessions read-only and runs the SQL exactly as written. It's plain Python, so you can edit it: change a date filter, add a step, schedule it.
+- Tables from files uploaded before 2.2.0 have no recorded layout; they're rebuilt the standard way (whole file or whole sheet), and the script's header says which ones.
 
 ## Removing files and freeing space
 
@@ -342,6 +376,8 @@ Settings go in `.env` (see `env.example`). Restart `python app.py` after changin
 | `MAX_UPLOAD_MB` | `20` | Per-file upload limit |
 | `FILE_TABLES` | `1` | `1` loads CSV/TSV/Excel into DuckDB as SQL tables, allowing large files up to `MAX_TABLE_UPLOAD_MB`. `0` turns this off: those files are read as text like other documents, limited to `MAX_UPLOAD_MB`, and the model can't query them with SQL. Files loaded as tables earlier then reach the model as their first lines only. Startup prints which is in effect. |
 | `MAX_TABLE_UPLOAD_MB` | `200` | Per-file limit for CSV/TSV/Excel loaded as SQL tables (needs `duckdb`; otherwise `MAX_UPLOAD_MB` applies) |
+| `SPLIT_TABLES` | `1` | Split a sheet or CSV that holds several tables (separated by blank rows or columns) into one table each. `0` loads every sheet/CSV as a single table, as before 2.1.0. |
+| `MAX_SPLIT_TABLES` | `30` | If a sheet seems to hold more tables than this, it's loaded as one table instead |
 | `EXCEL_READER` | `calamine` | `calamine` (fast, ~1 GB per million-row sheet) or `openpyxl` (slow, low memory) |
 | `MAX_TEXT_CHARS` | `400000` | Text kept per file or zip |
 | `ALLOWED_EXTENSIONS` | built-in list | Comma list that replaces the allowed types, e.g. `.png,.pdf,.csv` |
@@ -355,7 +391,8 @@ Settings go in `.env` (see `env.example`). Restart `python app.py` after changin
 
 | Variable | Default | Notes |
 |---|---|---|
-| `HOST` / `PORT` | `127.0.0.1` / `5000` | `HOST=0.0.0.0` opens it to your network; see [Security](#security) |
+| `PORT` | `5000` | Port the web page is served on. Set e.g. `PORT=8080` if 5000 is taken, then open `http://localhost:8080`. Startup stops with a clear message if the port is invalid or already in use. Chats are saved per address, so changing the port starts with an empty chat list: export first and import after (see [Where chats are kept](#where-chats-are-kept)). |
+| `HOST` | `127.0.0.1` | `127.0.0.1` serves this computer only; `HOST=0.0.0.0` opens it to your network; see [Security](#security) |
 | `FLASK_DEBUG` | `0` | `1` turns on Flask's debug mode (auto-reload on code changes, in-browser debugger) for development only. Never combine it with `HOST=0.0.0.0`: the debugger can run code. |
 
 ### Dependencies
@@ -393,6 +430,7 @@ db.py                PostgreSQL: connections, schema, read-only queries, prompts
 store.py             Saved connections in SQLite, secrets encrypted
 ssh_tunnel.py        SSH tunnels (port forwarding) to reach databases
 filesql.py           SQL over attached CSV/TSV/Excel files (DuckDB, read-only sandbox)
+scriptgen.py         Builds the standalone Python scripts that re-run queries offline
 templates/index.html The whole web UI (HTML, CSS and JS in one file)
 USER_GUIDE.md        Guide for everyday users; served in the app at /guide (Help link)
 CHANGELOG.md         What changed in each version
@@ -435,6 +473,9 @@ All responses are JSON unless noted.
 - `GET /api/db/connections/<id>/status` — tests the connection
 - `GET /api/db/connections/<id>/schema[?refresh=1]` — `{text, tables}`
 - `GET /api/fs/keys[?path=]` — one folder for the key picker: `{path, root, parent, dirs: [{name, path}], files: [{name, path, size, kind}], user, host}`, where `kind` is `private`, `public`, `ppk`, `other` or `unreadable`. 403 outside `KEY_BROWSE_ROOT` or when it's `off`.
+- `POST /api/tables` — `{dbs, files, refresh?}`; returns `{sources: [{id, name, kind: "files"|"db", error?, tables: [{name, rows, columns: [[name, type]], file?, sheet?, title?, schema?, view?}]}]}`
+- `POST /api/tables/preview` — `{source, table, dbs, files, offset, limit (≤200), sort?, desc?, q?}`; returns `{columns, rows, offset, limit, total, estimate, ms, sql}` or `{error}` with 400. `source` is `files` or a connection id; `table` must be one `/api/tables` listed.
+- `POST /api/script` — `{title, queries: [{sql, title?}], dbs, files}`; returns a `text/x-python` attachment with header `X-Queries` (queries included), or `{error}` with 400 when none can be resolved.
 - `POST /api/db/export` — same body as `/api/db/query`; returns the full result as `text/csv` (UTF-8 with BOM), up to `DB_EXPORT_MAX_ROWS`, with headers `X-Row-Count`, `X-Truncated` (`1` if cut off) and `X-Max-Rows`; `{error}` with 400 on failure
 - `POST /api/db/query` — `{sql, dbs, files}` (`files`: the chat's attachment ids in message order; CSV/Excel ones become the `files` source) → `{db_id, db_name, columns, rows, row_count, truncated, ms, text}` or `{error, text}`; `text` is what the model receives
 
